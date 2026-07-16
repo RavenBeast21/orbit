@@ -1,11 +1,15 @@
-// ServerView.jsx (new file)
-function ServerView({ server }) {
+import { useState, useEffect } from 'react'
+import pb from '../pocketbase'
+import ChannelView from './ChannelView'
+
+function ServerView({ server, onBack }) {
   const [channels, setChannels] = useState([])
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [channelName, setChannelName] = useState('')
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const [activeChannel, setActiveChannel] = useState(null)
 
   const isOwner = server.owner === pb.authStore.model.id
 
@@ -54,9 +58,13 @@ function ServerView({ server }) {
     }
   }
 
+  if (activeChannel) {
+    return <ChannelView channel={activeChannel} onBack={() => setActiveChannel(null)} />
+  }
+
   return (
     <div>
-      <p style={{ color: 'lightgreen' }}>Server successfully created</p>
+      <button onClick={onBack}>← Back to your servers</button>
       <h1>{server.name}</h1>
       <p>Type: {server.type}</p>
 
@@ -67,7 +75,9 @@ function ServerView({ server }) {
 
       <ul>
         {channels.map((channel) => (
-          <li key={channel.id}>{channel.name}</li>
+          <li key={channel.id}>
+            <button onClick={() => setActiveChannel(channel)}>{channel.name}</button>
+          </li>
         ))}
       </ul>
 
