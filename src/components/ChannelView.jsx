@@ -1,4 +1,3 @@
-// ChannelView.jsx
 import { useState, useEffect } from 'react'
 import pb from '../pocketbase'
 
@@ -7,6 +6,9 @@ function ChannelView({ channel, onBack }) {
   const [content, setContent] = useState('')
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
+  const [reportingId, setReportingId] = useState(null)
+  const [reportReason, setReportReason] = useState('')
+  const [reportStatus, setReportStatus] = useState('')
 
   const loadMessages = async () => {
     try {
@@ -67,6 +69,32 @@ function ChannelView({ channel, onBack }) {
     }
   }
 
+  const handleSubmitReport = async (messageId) => {
+    if (!reportReason.trim()) {
+      setReportStatus('Please enter a reason')
+      return
+    }
+
+    try {
+      await pb.collection('reports').create({
+        reported_by: pb.authStore.model.id,
+        target_type: 'message',
+        target_id: messageId,
+        reason: reportReason,
+        status: 'pending',
+      })
+      setReportStatus('Report submitted')
+      setReportReason('')
+      setTimeout(() => {
+        setReportingId(null)
+        setReportStatus('')
+      }, 1500)
+    } catch (err) {
+      console.error(err)
+      setReportStatus('Something went wrong submitting the report')
+    }
+  }
+
   return (
     <div>
       <button onClick={onBack}>← Back to server</button>
@@ -77,6 +105,23 @@ function ChannelView({ channel, onBack }) {
         {messages.map((msg) => (
           <div key={msg.id}>
             <strong>{msg.expand?.sender?.name || 'Unknown'}</strong>: {msg.content}
+            {' '}
+            <button onClick={() => setReportingId(reportingId === msg.id ? null : msg.id)}>
+              Report
+            </button>
+
+            {reportingId === msg.id && (
+              <div>
+                <input
+                  type="text"
+                  placeholder="Reason for report"
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                />
+                <button onClick={() => handleSubmitReport(msg.id)}>Submit Report</button>
+                {reportStatus && <p>{reportStatus}</p>}
+              </div>
+            )}
           </div>
         ))}
       </div>

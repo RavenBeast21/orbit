@@ -5,6 +5,8 @@ import Login from './components/Login'
 import Signup from './components/Signup'
 import CreateServer from './components/CreateServer'
 import ServerView from './components/ServerView'
+import Friends from './components/Friends'
+import DMs from './components/DMs'
 
 function App() {
   const [view, setView] = useState('login')
@@ -15,6 +17,7 @@ function App() {
   const [joinServerId, setJoinServerId] = useState('')
   const [joinError, setJoinError] = useState('')
   const [joinLoading, setJoinLoading] = useState(false)
+  const [dmTargetUserId, setDmTargetUserId] = useState(null)
 
   useEffect(() => {
     const unsubscribe = pb.authStore.onChange(() => {
@@ -97,6 +100,7 @@ function App() {
           await pb.collection('members').create({
             user: uid,
             server: server.id,
+            role: 'member',
           })
         }
       }
@@ -116,7 +120,26 @@ function App() {
     if (page === 'createServer') {
       return <CreateServer onCreated={handleServerCreated} />
     }
-
+    if (page === 'dms') {
+      return (
+        <DMs
+          onBack={() => setPage('welcome')}
+          openThreadWithUserId={dmTargetUserId}
+          clearOpenThreadRequest={() => setDmTargetUserId(null)}
+        />
+      )
+    }
+    if (page === 'friends') {
+      return (
+        <Friends
+          onBack={() => setPage('welcome')}
+          onMessageFriend={(userId) => {
+            setDmTargetUserId(userId)
+            setPage('dms')
+          }}
+        />
+      )
+    }
     if (page === 'serverView' && activeServer) {
       return (
         <ServerView
@@ -134,6 +157,7 @@ function App() {
         <h1>Welcome to Orbit, {pb.authStore.model.name}</h1>
         <p>You're logged in as @{pb.authStore.model.username}</p>
         <button onClick={() => setPage('createServer')}>Create a Server</button>
+        <button onClick={() => setPage('friends')}>Friends</button>
         <br />
         <br />
         <button onClick={handleLogout}>Log Out</button>
