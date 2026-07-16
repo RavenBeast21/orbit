@@ -1,26 +1,50 @@
 import { useState, useEffect } from 'react'
-import PocketBase from 'pocketbase'
-
-const pb = new PocketBase('http://127.0.0.1:8090')
+import pb from './pocketbase'
+import Login from './components/Login'
+import Signup from './components/Signup'
 
 function App() {
-  const [servers, setServers] = useState([])
+  const [view, setView] = useState('login')
+  const [isLoggedIn, setIsLoggedIn] = useState(pb.authStore.isValid)
 
   useEffect(() => {
-    pb.collection('servers').getFullList().then((records) => {
-      setServers(records)
+    const unsubscribe = pb.authStore.onChange(() => {
+      setIsLoggedIn(pb.authStore.isValid)
     })
+    return () => unsubscribe()
   }, [])
+
+  const handleLogout = () => {
+    pb.authStore.clear()
+  }
+
+  if (isLoggedIn) {
+    return (
+      <div>
+        <h1>Welcome to Orbit, {pb.authStore.model.name}</h1>
+        <p>You're logged in as @{pb.authStore.model.username}</p>
+        <button onClick={handleLogout}>Log Out</button>
+      </div>
+    )
+  }
 
   return (
     <div>
-      <h1>Orbit — PocketBase Connection Test</h1>
-      <p>Servers found: {servers.length}</p>
-      <ul>
-        {servers.map((server) => (
-          <li key={server.id}>{server.name}</li>
-        ))}
-      </ul>
+      {view === 'login' ? <Login /> : <Signup />}
+
+      <p>
+        {view === 'login' ? (
+          <>
+            Don't have an account?{' '}
+            <button onClick={() => setView('signup')}>Sign up</button>
+          </>
+        ) : (
+          <>
+            Already have an account?{' '}
+            <button onClick={() => setView('login')}>Log in</button>
+          </>
+        )}
+      </p>
     </div>
   )
 }
