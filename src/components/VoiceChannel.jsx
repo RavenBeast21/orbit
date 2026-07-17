@@ -6,10 +6,13 @@ function VoiceChannel({ channel, onBack }) {
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [muted, setMuted] = useState(false)
+  const [cameraOn, setCameraOn] = useState(false)
   const [participants, setParticipants] = useState([])
   const [error, setError] = useState('')
 
   const roomRef = useRef(null)
+  const localVideoRef = useRef(null)
+  const remoteVideosRef = useRef(null)
 
   const handleJoin = async () => {
     setError('')
@@ -36,6 +39,16 @@ function VoiceChannel({ channel, onBack }) {
           const el = track.attach()
           el.id = `audio-${track.sid}`
           document.body.appendChild(el)
+        }
+
+        if (track.kind === 'video') {
+          const el = track.attach()
+          el.id = `video-${track.sid}`
+          el.style.width = '200px'
+          el.style.margin = '5px'
+          if (remoteVideosRef.current) {
+            remoteVideosRef.current.appendChild(el)
+          }
         }
       })
 
@@ -76,6 +89,27 @@ function VoiceChannel({ channel, onBack }) {
     setMuted(newMuted)
   }
 
+  const handleToggleCamera = async () => {
+    if (!roomRef.current) return
+    const newCameraOn = !cameraOn
+
+    await roomRef.current.localParticipant.setCameraEnabled(newCameraOn)
+
+    if (newCameraOn) {
+      const videoPub = Array.from(roomRef.current.localParticipant.videoTrackPublications.values())[0]
+      if (videoPub?.track && localVideoRef.current) {
+        localVideoRef.current.innerHTML = ''
+        const el = videoPub.track.attach()
+        el.style.width = '200px'
+        localVideoRef.current.appendChild(el)
+      }
+    } else if (localVideoRef.current) {
+      localVideoRef.current.innerHTML = ''
+    }
+
+    setCameraOn(newCameraOn)
+  }
+
   const handleLeave = async () => {
     if (roomRef.current) {
       await roomRef.current.disconnect()
@@ -83,6 +117,9 @@ function VoiceChannel({ channel, onBack }) {
     }
     setConnected(false)
     setParticipants([])
+    setCameraOn(false)
+    if (localVideoRef.current) localVideoRef.current.innerHTML = ''
+    if (remoteVideosRef.current) remoteVideosRef.current.innerHTML = ''
   }
 
   return (
@@ -103,6 +140,10 @@ function VoiceChannel({ channel, onBack }) {
           <p>You're connected.</p>
           <button onClick={handleToggleMute}>{muted ? 'Unmute' : 'Mute'}</button>
           {' '}
+          <button onClick={handleToggleCamera}>
+            {cameraOn ? 'Turn Camera Off' : 'Turn Camera On'}
+          </button>
+          {' '}
           <button onClick={handleLeave} style={{ color: 'red' }}>
             Leave
           </button>
@@ -114,6 +155,12 @@ function VoiceChannel({ channel, onBack }) {
               <li key={name}>{name}</li>
             ))}
           </ul>
+
+          <h3>Video</h3>
+          <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+            <div ref={localVideoRef}></div>
+            <div ref={remoteVideosRef} style={{ display: 'flex', flexWrap: 'wrap' }}></div>
+          </div>
         </div>
       )}
     </div>
