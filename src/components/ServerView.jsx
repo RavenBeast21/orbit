@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import pb from '../pocketbase'
 import ChannelView from './ChannelView'
+import VoiceChannel from './VoiceChannel'
 
 function ServerView({ server, onBack }) {
   const [channels, setChannels] = useState([])
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [channelName, setChannelName] = useState('')
+  const [channelType, setChannelType] = useState('text')
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [loading, setLoading] = useState(false)
@@ -75,10 +77,12 @@ function ServerView({ server, onBack }) {
       await pb.collection('channels').create({
         name: channelName,
         server: server.id,
+        type: channelType,
       })
 
       setSuccessMessage('Channel successfully created')
       setChannelName('')
+      setChannelType('text')
       setShowCreateForm(false)
       loadChannels()
     } catch (err) {
@@ -135,6 +139,10 @@ function ServerView({ server, onBack }) {
     }
   }
 
+  if (activeChannel && activeChannel.type === 'voice') {
+    return <VoiceChannel channel={activeChannel} onBack={() => setActiveChannel(null)} />
+  }
+
   if (activeChannel) {
     return <ChannelView channel={activeChannel} onBack={() => setActiveChannel(null)} />
   }
@@ -177,7 +185,9 @@ function ServerView({ server, onBack }) {
       <ul>
         {channels.map((channel) => (
           <li key={channel.id}>
-            <button onClick={() => setActiveChannel(channel)}>{channel.name}</button>
+            <button onClick={() => setActiveChannel(channel)}>
+              {channel.type === 'voice' ? '🔊' : '#'} {channel.name}
+            </button>
           </li>
         ))}
       </ul>
@@ -198,6 +208,10 @@ function ServerView({ server, onBack }) {
                 value={channelName}
                 onChange={(e) => setChannelName(e.target.value)}
               />
+              <select value={channelType} onChange={(e) => setChannelType(e.target.value)}>
+                <option value="text">Text</option>
+                <option value="voice">Voice</option>
+              </select>
               <button type="submit" disabled={loading}>
                 {loading ? 'Creating...' : 'Create'}
               </button>
