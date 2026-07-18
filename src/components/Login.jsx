@@ -6,10 +6,13 @@ function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [disabledAccount, setDisabledAccount] = useState(false)
+  const [reactivating, setReactivating] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setDisabledAccount(false)
 
     if (!identity || !password) {
       setError('Please fill in both fields')
@@ -20,13 +23,48 @@ function Login() {
 
     try {
       await pb.collection('users').authWithPassword(identity, password)
-      console.log('Logged in successfully:', pb.authStore.model)
+
+      if (pb.authStore.model.account_disabled) {
+        setDisabledAccount(true)
+      }
     } catch (err) {
       console.error(err)
       setError('Incorrect email/username or password, or your account is not verified yet')
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleReactivate = async () => {
+    setReactivating(true)
+    try {
+      await pb.collection('users').update(pb.authStore.model.id, { account_disabled: false })
+      await pb.collection('users').authRefresh()
+      setDisabledAccount(false)
+    } catch (err) {
+      console.error('Reactivate error:', err)
+      setError('Something went wrong reactivating your account')
+    } finally {
+      setReactivating(false)
+    }
+  }
+
+  const handleCancelReactivate = () => {
+    pb.authStore.clear()
+    setDisabledAccount(false)
+  }
+
+  if (disabledAccount) {
+    return (
+      <div>
+        <h1>Your account is disabled</h1>
+        <p>You chose to temporarily disable your account. Reactivate it now to continue?</p>
+        <button onClick={handleReactivate} disabled={reactivating}>
+          {reactivating ? 'Reactivating...' : 'Reactivate My Account'}
+        </button>
+        <button onClick={handleCancelReactivate}>Log Out</button>
+      </div>
+    )
   }
 
   return (

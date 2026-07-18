@@ -65,7 +65,12 @@ function VoiceChannel({ channel, onBack }) {
       })
 
       await room.connect(data.url, data.token)
-      await room.localParticipant.setMicrophoneEnabled(true)
+
+      const savedMicId = localStorage.getItem('orbit_mic_id')
+      await room.localParticipant.setMicrophoneEnabled(
+        true,
+        savedMicId ? { deviceId: savedMicId } : undefined
+      )
 
       setConnected(true)
       updateParticipants(room)
@@ -93,7 +98,11 @@ function VoiceChannel({ channel, onBack }) {
     if (!roomRef.current) return
     const newCameraOn = !cameraOn
 
-    await roomRef.current.localParticipant.setCameraEnabled(newCameraOn)
+    const savedCameraId = localStorage.getItem('orbit_camera_id')
+    await roomRef.current.localParticipant.setCameraEnabled(
+      newCameraOn,
+      savedCameraId ? { deviceId: savedCameraId } : undefined
+    )
 
     if (newCameraOn) {
       const videoPub = Array.from(roomRef.current.localParticipant.videoTrackPublications.values())[0]

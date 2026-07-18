@@ -7,6 +7,7 @@ import CreateServer from './components/CreateServer'
 import ServerView from './components/ServerView'
 import Friends from './components/Friends'
 import DMs from './components/DMs'
+import Settings from './components/Settings'
 
 function App() {
   const [view, setView] = useState('login')
@@ -18,10 +19,15 @@ function App() {
   const [joinError, setJoinError] = useState('')
   const [joinLoading, setJoinLoading] = useState(false)
   const [dmTargetUserId, setDmTargetUserId] = useState(null)
+  const [accountDisabled, setAccountDisabled] = useState(pb.authStore.model?.account_disabled || false)
 
   useEffect(() => {
     const unsubscribe = pb.authStore.onChange(() => {
       setIsLoggedIn(pb.authStore.isValid)
+      setAccountDisabled(pb.authStore.model?.account_disabled || false)
+      if (!pb.authStore.isValid) {
+        setPage('welcome')
+      }
     })
     return () => unsubscribe()
   }, [])
@@ -54,6 +60,11 @@ function App() {
       console.error(err)
     }
   }
+
+  useEffect(() => {
+    const size = pb.authStore.model?.accessibility_text_size || 16
+    document.body.style.fontSize = `${size}px`
+  }, [isLoggedIn])
 
   useEffect(() => {
     if (isLoggedIn && page === 'welcome') {
@@ -117,8 +128,30 @@ function App() {
   }
 
   if (isLoggedIn) {
+    if (accountDisabled) {
+      return (
+        <div>
+          <h1>Your account is disabled</h1>
+          <p>You chose to temporarily disable your account. Reactivate it now to continue?</p>
+          <button
+            onClick={async () => {
+              await pb.collection('users').update(pb.authStore.model.id, { account_disabled: false })
+              await pb.collection('users').authRefresh()
+              setAccountDisabled(false)
+            }}
+          >
+            Reactivate My Account
+          </button>
+          <button onClick={handleLogout}>Log Out</button>
+        </div>
+      )
+    }
+
     if (page === 'createServer') {
       return <CreateServer onCreated={handleServerCreated} />
+    }
+    if (page === 'settings') {
+      return <Settings onBack={() => setPage('welcome')} />
     }
     if (page === 'dms') {
       return (
@@ -158,6 +191,7 @@ function App() {
         <p>You're logged in as @{pb.authStore.model.username}</p>
         <button onClick={() => setPage('createServer')}>Create a Server</button>
         <button onClick={() => setPage('friends')}>Friends</button>
+        <button onClick={() => setPage('settings')}>⚙️ Settings</button>
         <br />
         <br />
         <button onClick={handleLogout}>Log Out</button>

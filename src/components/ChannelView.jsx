@@ -34,6 +34,12 @@ function ChannelView({ channel, onBack }) {
           expand: 'sender',
         })
         setMessages((prev) => [...prev, fullRecord])
+
+        const isOwnMessage = e.record.sender === pb.authStore.model.id
+        if (!isOwnMessage && pb.authStore.model.notif_message_sound) {
+          const audio = new Audio('/notification.mp3')
+          audio.play().catch((err) => console.error('Notification sound error:', err))
+        }
       }
     })
 
@@ -103,7 +109,7 @@ function ChannelView({ channel, onBack }) {
       <div>
         {messages.length === 0 && <p>No messages yet.</p>}
         {messages.map((msg) => (
-          <div key={msg.id}>
+          <div key={msg.id} style={{ fontSize: 'var(--orbit-text-size, 16px)' }}>
             <strong>{msg.expand?.sender?.name || 'Unknown'}</strong>: {msg.content}
             {' '}
             <button onClick={() => setReportingId(reportingId === msg.id ? null : msg.id)}>
