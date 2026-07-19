@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import pb from '../pocketbase'
 
-function ChannelView({ channel, onBack }) {
+function ChannelView({ channel, onBack, setActiveConversation }) {
   const [messages, setMessages] = useState([])
   const [content, setContent] = useState('')
   const [error, setError] = useState('')
@@ -24,7 +24,18 @@ function ChannelView({ channel, onBack }) {
   }
 
   useEffect(() => {
+    if (setActiveConversation) {
+      setActiveConversation({ type: 'channel', id: channel.id })
+    }
+    return () => {
+      if (setActiveConversation) setActiveConversation(null)
+    }
+  }, [channel.id])
+
+  useEffect(() => {
     loadMessages()
+
+    let unsub
 
     pb.collection('messages').subscribe('*', async (e) => {
       if (e.record.channel !== channel.id) return
@@ -34,17 +45,13 @@ function ChannelView({ channel, onBack }) {
           expand: 'sender',
         })
         setMessages((prev) => [...prev, fullRecord])
-
-        const isOwnMessage = e.record.sender === pb.authStore.model.id
-        if (!isOwnMessage && pb.authStore.model.notif_message_sound) {
-          const audio = new Audio('/notification.mp3')
-          audio.play().catch((err) => console.error('Notification sound error:', err))
-        }
       }
+    }).then((fn) => {
+      unsub = fn
     })
 
     return () => {
-      pb.collection('messages').unsubscribe('*')
+      if (unsub) unsub()
     }
   }, [channel.id])
 
@@ -109,7 +116,12 @@ function ChannelView({ channel, onBack }) {
       <div>
         {messages.length === 0 && <p>No messages yet.</p>}
         {messages.map((msg) => (
-          <div key={msg.id} style={{ fontSize: 'var(--orbit-text-size, 16px)' }}>
+          <div key={msg.id} style={{ fontSize: 'var(--orbit-text-size, 16px)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            {msg.expand?.sender?.avatar ? (
+              <img src={pb.files.getURL(msg.expand.sender, msg.expand.sender.avatar, { thumb: '24x24' })} alt="" style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#333' }} />
+            )}
             <strong>{msg.expand?.sender?.name || 'Unknown'}</strong>: {msg.content}
             {' '}
             <button onClick={() => setReportingId(reportingId === msg.id ? null : msg.id)}>

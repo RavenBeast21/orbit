@@ -3,7 +3,7 @@ import pb from '../pocketbase'
 import ChannelView from './ChannelView'
 import VoiceChannel from './VoiceChannel'
 
-function ServerView({ server, onBack }) {
+function ServerView({ server, onBack, setActiveConversation }) {
   const [channels, setChannels] = useState([])
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [channelName, setChannelName] = useState('')
@@ -18,8 +18,79 @@ function ServerView({ server, onBack }) {
   const [reportReason, setReportReason] = useState('')
   const [reportStatus, setReportStatus] = useState('')
 
+  const [ownerAvatarUrl, setOwnerAvatarUrl] = useState(null)
+
+  const [ownerName, setOwnerName] = useState('')
+  const [ownerStatus, setOwnerStatus] = useState('online')
+
+  const [notificationSetting, setNotificationSetting] = useState('all')
+
   const uid = pb.authStore.model.id
   const isOwner = server.owner === uid
+
+  const [invites, setInvites] = useState([])
+  const [showCreateInvite, setShowCreateInvite] = useState(false)
+  const [inviteMaxUses, setInviteMaxUses] = useState('')
+  const [inviteExpiry, setInviteExpiry] = useState('')
+  const [inviteError, setInviteError] = useState('')
+  const [inviteCreating, setInviteCreating] = useState(false)
+
+  const loadInvites = async () => {
+    if (!isOwner) return
+    try {
+      const records = await pb.collection('invites').getFullList({
+        filter: `server="${server.id}"`,
+        sort: '-created',
+      })
+      setInvites(records)
+    } catch (err) {
+      console.error('Load invites error:', err)
+    }
+  }
+
+  const handleCreateInvite = async () => {
+    setInviteError('')
+    setInviteCreating(true)
+    try {
+      const data = {
+        server: server.id,
+        created_by: uid,
+        uses: 0,
+      }
+      if (inviteMaxUses.trim()) data.max_uses = Number(inviteMaxUses)
+      if (inviteExpiry) data.expires_at = new Date(inviteExpiry).toISOString()
+
+      await pb.collection('invites').create(data)
+      setInviteMaxUses('')
+      setInviteExpiry('')
+      setShowCreateInvite(false)
+      loadInvites()
+    } catch (err) {
+      console.error('Create invite error:', err)
+      setInviteError(err.message || 'Something went wrong creating the invite')
+    } finally {
+      setInviteCreating(false)
+    }
+  }
+
+  const handleRevokeInvite = async (inviteId) => {
+    try {
+      await pb.collection('invites').delete(inviteId)
+      loadInvites()
+    } catch (err) {
+      console.error('Revoke invite error:', err)
+    }
+  }
+
+  const handleChangeNotificationSetting = async (newSetting) => {
+    if (!myMembership) return
+    setNotificationSetting(newSetting)
+    try {
+      await pb.collection('members').update(myMembership.id, { notification_setting: newSetting })
+    } catch (err) {
+      console.error('Notification setting error:', err)
+    }
+  }
 
   const loadChannels = async () => {
     try {
@@ -42,6 +113,20 @@ function ServerView({ server, onBack }) {
 
       const mine = records.find((m) => m.user === uid)
       setMyMembership(mine || null)
+      if (mine) {
+        setNotificationSetting(mine.notification_setting || 'all')
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const loadOwnerName = async () => {
+    try {
+      const ownerRecord = await pb.collection('users').getOne(server.owner)
+      setOwnerName(ownerRecord.name)
+      setOwnerStatus(ownerRecord.status === 'invisible' ? 'offline' : (ownerRecord.status || 'online'))
+      setOwnerAvatarUrl(ownerRecord.avatar ? pb.files.getURL(ownerRecord, ownerRecord.avatar, { thumb: '32x32' }) : null)
     } catch (err) {
       console.error(err)
     }
@@ -50,14 +135,39 @@ function ServerView({ server, onBack }) {
   useEffect(() => {
     loadChannels()
     loadMembers()
+    loadOwnerName()
+
+    let unsubMembers
+    let unsubUsers
 
     pb.collection('members').subscribe('*', (e) => {
       if (e.record.server !== server.id) return
       loadMembers()
+    }).then((fn) => {
+      unsubMembers = fn
+    })
+
+    pb.collection('users').subscribe('*', (e) => {
+      if (e.action !== 'update') return
+
+      if (e.record.id === server.owner) {
+        setOwnerStatus(e.record.status === 'invisible' ? 'offline' : (e.record.status || 'online'))
+      }
+
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.user === e.record.id
+            ? { ...m, expand: { ...m.expand, user: { ...m.expand?.user, status: e.record.status } } }
+            : m
+        )
+      )
+    }).then((fn) => {
+      unsubUsers = fn
     })
 
     return () => {
-      pb.collection('members').unsubscribe('*')
+      if (unsubMembers) unsubMembers()
+      if (unsubUsers) unsubUsers()
     }
   }, [])
 
@@ -144,7 +254,7 @@ function ServerView({ server, onBack }) {
   }
 
   if (activeChannel) {
-    return <ChannelView channel={activeChannel} onBack={() => setActiveChannel(null)} />
+    return <ChannelView channel={activeChannel} onBack={() => setActiveChannel(null)} setActiveConversation={setActiveConversation} />
   }
 
   return (
@@ -154,9 +264,73 @@ function ServerView({ server, onBack }) {
       <p>Type: {server.type}</p>
 
       {!isOwner && myMembership && (
-        <button onClick={handleLeaveServer} style={{ color: 'red' }}>
-          Leave Server
-        </button>
+        <div>
+          <label>Notification Settings for this server: </label>
+          <select
+            value={notificationSetting}
+            onChange={(e) => handleChangeNotificationSetting(e.target.value)}
+          >
+            <option value="all">All Messages</option>
+            <option value="nothing">Nothing</option>
+          </select>
+        </div>
+      )}
+      {isOwner && (
+        <p style={{ color: 'gray' }}>
+          Per-server notification settings for owners aren't supported yet — this needs a schema change since owners don't have a membership record.
+        </p>
+      )}
+
+      {isOwner && (
+        <div>
+          <hr />
+          <h2>Invites</h2>
+
+          {!showCreateInvite && (
+            <button onClick={() => setShowCreateInvite(true)}>Create Invite</button>
+          )}
+
+          {showCreateInvite && (
+            <div>
+              <div>
+                <label>Max uses (leave empty for unlimited)</label>
+                <br />
+                <input
+                  type="number"
+                  value={inviteMaxUses}
+                  onChange={(e) => setInviteMaxUses(e.target.value)}
+                />
+              </div>
+              <div>
+                <label>Expires at (leave empty for never)</label>
+                <br />
+                <input
+                  type="datetime-local"
+                  value={inviteExpiry}
+                  onChange={(e) => setInviteExpiry(e.target.value)}
+                />
+              </div>
+              <button onClick={handleCreateInvite} disabled={inviteCreating}>
+                {inviteCreating ? 'Creating...' : 'Generate Invite'}
+              </button>
+              <button onClick={() => setShowCreateInvite(false)}>Cancel</button>
+              {inviteError && <p style={{ color: 'red' }}>{inviteError}</p>}
+            </div>
+          )}
+
+          <ul>
+            {invites.length === 0 && <p>No active invites.</p>}
+            {invites.map((invite) => (
+              <li key={invite.id}>
+                <strong>{invite.code}</strong>
+                {' '}— uses: {invite.uses}{invite.max_users ? `/${invite.max_users}` : ' (unlimited)'}
+                {invite.expires_at && `, expires ${new Date(invite.expires_at).toLocaleString()}`}
+                {' '}
+                <button onClick={() => handleRevokeInvite(invite.id)}>Revoke</button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {' '}
@@ -228,12 +402,22 @@ function ServerView({ server, onBack }) {
 
       <h2>Members</h2>
       <ul>
-        <li>
-          <strong>{pb.authStore.model.name}</strong> (Owner) — this is the owner if you're viewing your own server
+        <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {ownerAvatarUrl ? (
+            <img src={ownerAvatarUrl} alt="" style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }} />
+          ) : (
+            <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#333' }} />
+          )}
+          <strong>{ownerName || 'Unknown'}</strong> ({ownerStatus}) (Owner)
         </li>
         {members.map((member) => (
-          <li key={member.id}>
-            {member.expand?.user?.name || 'Unknown'} — {member.role}
+          <li key={member.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {member.expand?.user?.avatar ? (
+              <img src={pb.files.getURL(member.expand.user, member.expand.user.avatar, { thumb: '32x32' })} alt="" style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#333' }} />
+            )}
+            {member.expand?.user?.name || 'Unknown'} ({member.expand?.user?.status === 'invisible' ? 'offline' : (member.expand?.user?.status || 'online')}) — {member.role}
             {isOwner && (
               <>
                 {' '}

@@ -4,6 +4,9 @@ import pb from '../pocketbase'
 
 function Settings({ onBack }) {
   const user = pb.authStore.model
+  const avatarUrl = user.avatar
+    ? pb.files.getURL(user, user.avatar, { thumb: '100x100' })
+    : null
 
   const [section, setSection] = useState('account')
 
@@ -54,6 +57,91 @@ function Settings({ onBack }) {
   const [textSize, setTextSize] = useState(user.accessibility_text_size || 16)
   const [reducedMotion, setReducedMotion] = useState(user.accessibility_reduced_motion ?? false)
   const [accessibilitySaving, setAccessibilitySaving] = useState(false)
+
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarError, setAvatarError] = useState('')
+
+  const [mfaEnabled, setMfaEnabled] = useState(user.mfa_enabled ?? false)
+  const [mfaPasswordConfirm, setMfaPasswordConfirm] = useState('')
+  const [mfaError, setMfaError] = useState('')
+  const [mfaSuccess, setMfaSuccess] = useState('')
+  const [mfaSaving, setMfaSaving] = useState(false)
+  const [showMfaConfirm, setShowMfaConfirm] = useState(false)
+
+  const handleToggleMfa = async () => {
+    setMfaError('')
+    setMfaSuccess('')
+
+    if (!mfaPasswordConfirm) {
+      setMfaError('Enter your current password to confirm this change')
+      return
+    }
+
+    setMfaSaving(true)
+    try {
+      await pb.collection('users').authWithPassword(user.username, mfaPasswordConfirm)
+
+      const newValue = !mfaEnabled
+      await pb.collection('users').update(user.id, { mfa_enabled: newValue })
+      await pb.collection('users').authRefresh()
+
+      setMfaEnabled(newValue)
+      setMfaSuccess(newValue ? 'Two-factor authentication enabled' : 'Two-factor authentication disabled')
+      setMfaPasswordConfirm('')
+      setShowMfaConfirm(false)
+    } catch (err) {
+      console.error('MFA toggle error:', err)
+      if (err.status === 400) {
+        setMfaError('Incorrect password')
+      } else {
+        setMfaError(err.message || 'Something went wrong updating two-factor authentication')
+      }
+    } finally {
+      setMfaSaving(false)
+    }
+  }
+
+  const handleAvatarUpload = async (e) => {
+    setAvatarError('')
+    const file = e.target.files[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      setAvatarError('Please choose an image file')
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError('Image must be under 5MB')
+      return
+    }
+
+    setAvatarUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('avatar', file)
+
+      await pb.collection('users').update(user.id, formData)
+      await pb.collection('users').authRefresh()
+    } catch (err) {
+      console.error('Avatar upload error:', err)
+      setAvatarError(err.message || 'Something went wrong uploading your avatar')
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
+  const handleRemoveAvatar = async () => {
+    setAvatarUploading(true)
+    try {
+      await pb.collection('users').update(user.id, { avatar: null })
+      await pb.collection('users').authRefresh()
+    } catch (err) {
+      console.error('Avatar remove error:', err)
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
 
   const daysRemainingForUsernameChange = () => {
     if (!user.username_changed_at) return 0
@@ -373,6 +461,30 @@ function Settings({ onBack }) {
             <div>
               <h2>Account Info</h2>
 
+              <div style={{ marginBottom: '20px' }}>
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Your avatar" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', display: 'block', marginBottom: '10px' }} />
+                ) : (
+                  <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px', color: '#888' }}>
+                    No avatar
+                  </div>
+                )}
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  disabled={avatarUploading}
+                />
+                {avatarUrl && (
+                  <button onClick={handleRemoveAvatar} disabled={avatarUploading} style={{ marginLeft: '10px' }}>
+                    Remove
+                  </button>
+                )}
+                {avatarUploading && <p>Uploading...</p>}
+                {avatarError && <p style={{ color: 'red' }}>{avatarError}</p>}
+              </div>
+
               <div>
                 <strong>Username:</strong>{' '}
                 {editingUsername ? (
@@ -469,6 +581,9 @@ function Settings({ onBack }) {
               </div>
 
               <br />
+              <p><strong>User ID:</strong> {user.id}</p>
+
+              <br />
               <hr />
 
               <h2>Password & Security</h2>
@@ -513,6 +628,43 @@ function Settings({ onBack }) {
                   <button onClick={startEditPassword}>Edit Password</button>
                 )}
               </div>
+
+              <br />
+              <hr />
+
+              <h2>Two-Factor Authentication</h2>
+              <p style={{ color: 'gray' }}>
+                Recommended for extra security. When enabled, you'll need to enter a one-time code sent to your email each time you log in, in addition to your password.
+              </p>
+
+              <div>
+                <strong>Status:</strong> {mfaEnabled ? '✅ Enabled' : 'Disabled'}
+                {' '}
+                <button onClick={() => setShowMfaConfirm(true)}>
+                  {mfaEnabled ? 'Disable' : 'Enable'}
+                </button>
+              </div>
+
+              {showMfaConfirm && (
+                <div>
+                  <label>Confirm your current password</label>
+                  <br />
+                  <input
+                    type="password"
+                    value={mfaPasswordConfirm}
+                    onChange={(e) => setMfaPasswordConfirm(e.target.value)}
+                  />
+                  <button onClick={handleToggleMfa} disabled={mfaSaving}>
+                    {mfaSaving ? 'Saving...' : mfaEnabled ? 'Confirm Disable' : 'Confirm Enable'}
+                  </button>
+                  <button onClick={() => { setShowMfaConfirm(false); setMfaPasswordConfirm('') }}>
+                    Cancel
+                  </button>
+                  {mfaError && <p style={{ color: 'red' }}>{mfaError}</p>}
+                  {mfaSuccess && <p style={{ color: 'lightgreen' }}>{mfaSuccess}</p>}
+                </div>
+              )}
+              
               <br />
               <hr />
 

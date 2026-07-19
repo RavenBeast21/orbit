@@ -1,5 +1,5 @@
 // App.jsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import pb from './pocketbase'
 import Login from './components/Login'
 import Signup from './components/Signup'
@@ -20,6 +20,10 @@ function App() {
   const [joinLoading, setJoinLoading] = useState(false)
   const [dmTargetUserId, setDmTargetUserId] = useState(null)
   const [accountDisabled, setAccountDisabled] = useState(pb.authStore.model?.account_disabled || false)
+  const activeConversationRef = useRef(null)
+  const isFocusedRef = useRef(!document.hidden)
+  const [showStatusMenu, setShowStatusMenu] = useState(false)
+  const [showTimerMenu, setShowTimerMenu] = useState(null)
 
   useEffect(() => {
     const unsubscribe = pb.authStore.onChange(() => {
@@ -31,6 +35,25 @@ function App() {
     })
     return () => unsubscribe()
   }, [])
+
+  const setUserStatus = async (status, durationMinutes) => {
+    try {
+      let expiresAt = null
+      if (durationMinutes && durationMinutes !== 'forever') {
+        expiresAt = new Date(Date.now() + durationMinutes * 60000).toISOString()
+      }
+
+      await pb.collection('users').update(pb.authStore.model.id, {
+        status,
+        status_expires_at: expiresAt,
+      })
+      await pb.collection('users').authRefresh()
+      setShowStatusMenu(false)
+      setShowTimerMenu(null)
+    } catch (err) {
+      console.error('Status update error:', err)
+    }
+  }
 
   const loadMyServers = async () => {
     try {
@@ -60,6 +83,127 @@ function App() {
       console.error(err)
     }
   }
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      const model = pb.authStore.model
+      const hasActiveStatus = model?.status_expires_at && new Date(model.status_expires_at) > new Date()
+      const isPermanentManualStatus = model?.status && model.status !== 'online' && !model?.status_expires_at
+
+      if (!hasActiveStatus && !isPermanentManualStatus) {
+        setUserStatus('online', null)
+      }
+    }
+  }, [isLoggedIn])
+
+  useEffect(() => {
+    if (!isLoggedIn) return
+
+    const checkExpiry = () => {
+      const model = pb.authStore.model
+      if (model?.status_expires_at && new Date(model.status_expires_at) <= new Date()) {
+        setUserStatus('online', null)
+      }
+    }
+
+    checkExpiry()
+    const interval = setInterval(checkExpiry, 30000)
+    return () => clearInterval(interval)
+  }, [isLoggedIn])
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      isFocusedRef.current = !document.hidden
+    }
+    const handleFocus = () => { isFocusedRef.current = true }
+    const handleBlur = () => { isFocusedRef.current = false }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', handleFocus)
+    window.addEventListener('blur', handleBlur)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('blur', handleBlur)
+    }
+  }, [])
+
+  const setActiveConversation = (conv) => {
+    activeConversationRef.current = conv
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) return
+
+    const playSound = (file) => {
+      const audio = new Audio(file)
+      audio.play().catch((err) => console.error('Notification sound error:', err))
+    }
+
+    const handleServerMessage = async (e) => {
+      if (e.action !== 'create') return
+      if (e.record.sender === pb.authStore.model.id) return
+      if (!pb.authStore.model.notif_message_sound) return
+
+      try {
+        const channel = await pb.collection('channels').getOne(e.record.channel)
+
+        const memberRecords = await pb.collection('members').getFullList({
+          filter: `user="${pb.authStore.model.id}" && server="${channel.server}"`,
+        })
+        const mySetting = memberRecords[0]?.notification_setting || 'all'
+        if (mySetting === 'nothing') return
+
+        const isViewingThisChannel =
+          activeConversationRef.current?.type === 'channel' &&
+          activeConversationRef.current?.id === e.record.channel
+
+        if (isViewingThisChannel && isFocusedRef.current) return
+
+        if (isViewingThisChannel && !isFocusedRef.current) {
+          playSound('/notification_in_server_or_dms.mp3')
+        } else {
+          playSound('/notification_not_in_server_or_dms.mp3')
+        }
+      } catch (err) {
+        console.error('Notification check error:', err)
+      }
+    }
+
+    const handleDmMessage = (e) => {
+      if (e.action !== 'create') return
+      if (e.record.sender === pb.authStore.model.id) return
+      if (!pb.authStore.model.notif_message_sound) return
+
+      const isViewingThisThread =
+        activeConversationRef.current?.type === 'dm' &&
+        activeConversationRef.current?.id === e.record.dm_thread
+
+      if (isViewingThisThread && isFocusedRef.current) return
+
+      if (isViewingThisThread && !isFocusedRef.current) {
+        playSound('/notification_in_server_or_dms.mp3')
+      } else {
+        playSound('/notification_not_in_server_or_dms.mp3')
+      }
+    }
+
+    let unsubMessages
+    let unsubDmMessages
+
+    pb.collection('messages').subscribe('*', handleServerMessage).then((fn) => {
+      unsubMessages = fn
+    })
+    pb.collection('dm_messages').subscribe('*', handleDmMessage).then((fn) => {
+      unsubDmMessages = fn
+    })
+
+    return () => {
+      if (unsubMessages) unsubMessages()
+      if (unsubDmMessages) unsubDmMessages()
+    }
+  }, [isLoggedIn])
 
   useEffect(() => {
     const size = pb.authStore.model?.accessibility_text_size || 16
@@ -92,7 +236,7 @@ function App() {
     setJoinError('')
 
     if (!joinServerId.trim()) {
-      setJoinError('Please enter a server ID')
+      setJoinError('Please enter an invite code')
       return
     }
 
@@ -100,7 +244,32 @@ function App() {
 
     try {
       const uid = pb.authStore.model.id
-      const server = await pb.collection('servers').getOne(joinServerId.trim())
+
+      const inviteMatches = await pb.collection('invites').getFullList({
+        filter: `code="${joinServerId.trim()}"`,
+      })
+
+      if (inviteMatches.length === 0) {
+        setJoinError('Invalid invite code')
+        setJoinLoading(false)
+        return
+      }
+
+      const invite = inviteMatches[0]
+
+      if (invite.expires_at && new Date(invite.expires_at) <= new Date()) {
+        setJoinError('This invite has expired')
+        setJoinLoading(false)
+        return
+      }
+
+      if (invite.max_users && invite.uses >= invite.max_users) {
+        setJoinError('This invite has reached its use limit')
+        setJoinLoading(false)
+        return
+      }
+
+      const server = await pb.collection('servers').getOne(invite.server)
 
       if (server.owner !== uid) {
         const existingMembership = await pb.collection('members').getFullList({
@@ -113,6 +282,10 @@ function App() {
             server: server.id,
             role: 'member',
           })
+
+          await pb.collection('invites').update(invite.id, {
+            uses: invite.uses + 1,
+          })
         }
       }
 
@@ -121,7 +294,7 @@ function App() {
       setJoinServerId('')
     } catch (err) {
       console.error(err)
-      setJoinError('Server not found. Double check the ID.')
+      setJoinError('Something went wrong joining that server')
     } finally {
       setJoinLoading(false)
     }
@@ -159,6 +332,7 @@ function App() {
           onBack={() => setPage('welcome')}
           openThreadWithUserId={dmTargetUserId}
           clearOpenThreadRequest={() => setDmTargetUserId(null)}
+          setActiveConversation={setActiveConversation}
         />
       )
     }
@@ -181,6 +355,7 @@ function App() {
             setPage('welcome')
             setActiveServer(null)
           }}
+          setActiveConversation={setActiveConversation}
         />
       )
     }
@@ -191,10 +366,72 @@ function App() {
         <p>You're logged in as @{pb.authStore.model.username}</p>
         <button onClick={() => setPage('createServer')}>Create a Server</button>
         <button onClick={() => setPage('friends')}>Friends</button>
+        <button onClick={() => setPage('dms')}>Messages</button>
         <button onClick={() => setPage('settings')}>⚙️ Settings</button>
         <br />
         <br />
         <button onClick={handleLogout}>Log Out</button>
+
+        <div style={{ position: 'relative', display: 'inline-block', marginBottom: '150px' }}>
+          <button onClick={() => setShowStatusMenu(!showStatusMenu)}>
+            Status: {pb.authStore.model.status || 'online'}
+          </button>
+
+          {showStatusMenu && (
+            <div style={{ border: '1px solid gray', padding: '10px', position: 'absolute', backgroundColor: '#1a1a1a', zIndex: 10, minWidth: '180px' }}>
+              <div onClick={() => setUserStatus('online', null)} style={{ cursor: 'pointer' }}>
+                🟢 Online
+              </div>
+              <div onClick={() => setShowTimerMenu(showTimerMenu === 'idle' ? null : 'idle')} style={{ cursor: 'pointer' }}>
+                🌙 Idle
+              </div>
+              {showTimerMenu === 'idle' && (
+                <div>
+                  {[15, 60, 480, 1440, 4320].map((mins) => (
+                    <div key={mins} onClick={() => setUserStatus('idle', mins)} style={{ cursor: 'pointer', paddingLeft: '10px' }}>
+                      For {mins < 60 ? `${mins} Minutes` : mins < 1440 ? `${mins / 60} Hour(s)` : `${mins / 1440} Day(s)`}
+                    </div>
+                  ))}
+                  <div onClick={() => setUserStatus('idle', 'forever')} style={{ cursor: 'pointer', paddingLeft: '10px' }}>
+                    Forever
+                  </div>
+                </div>
+              )}
+
+              <div onClick={() => setShowTimerMenu(showTimerMenu === 'dnd' ? null : 'dnd')} style={{ cursor: 'pointer' }}>
+                ⛔ Do Not Disturb
+              </div>
+              {showTimerMenu === 'dnd' && (
+                <div>
+                  {[15, 60, 480, 1440, 4320].map((mins) => (
+                    <div key={mins} onClick={() => setUserStatus('dnd', mins)} style={{ cursor: 'pointer', paddingLeft: '10px' }}>
+                      For {mins < 60 ? `${mins} Minutes` : mins < 1440 ? `${mins / 60} Hour(s)` : `${mins / 1440} Day(s)`}
+                    </div>
+                  ))}
+                  <div onClick={() => setUserStatus('dnd', 'forever')} style={{ cursor: 'pointer', paddingLeft: '10px' }}>
+                    Forever
+                  </div>
+                </div>
+              )}
+
+              <div onClick={() => setShowTimerMenu(showTimerMenu === 'invisible' ? null : 'invisible')} style={{ cursor: 'pointer' }}>
+                ⚪ Invisible
+              </div>
+              {showTimerMenu === 'invisible' && (
+                <div>
+                  {[15, 60, 480, 1440, 4320].map((mins) => (
+                    <div key={mins} onClick={() => setUserStatus('invisible', mins)} style={{ cursor: 'pointer', paddingLeft: '10px' }}>
+                      For {mins < 60 ? `${mins} Minutes` : mins < 1440 ? `${mins / 60} Hour(s)` : `${mins / 1440} Day(s)`}
+                    </div>
+                  ))}
+                  <div onClick={() => setUserStatus('invisible', 'forever')} style={{ cursor: 'pointer', paddingLeft: '10px' }}>
+                    Forever
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         <hr />
 
@@ -213,7 +450,7 @@ function App() {
         <form onSubmit={handleJoinServer}>
           <input
             type="text"
-            placeholder="Paste server ID"
+            placeholder="Paste invite code"
             value={joinServerId}
             onChange={(e) => setJoinServerId(e.target.value)}
           />

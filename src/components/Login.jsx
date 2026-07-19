@@ -6,13 +6,16 @@ function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [disabledAccount, setDisabledAccount] = useState(false)
-  const [reactivating, setReactivating] = useState(false)
+
+  const [mfaId, setMfaId] = useState(null)
+  const [otpId, setOtpId] = useState(null)
+  const [otpCode, setOtpCode] = useState('')
+  const [mfaError, setMfaError] = useState('')
+  const [mfaLoading, setMfaLoading] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    setDisabledAccount(false)
 
     if (!identity || !password) {
       setError('Please fill in both fields')
@@ -23,46 +26,66 @@ function Login() {
 
     try {
       await pb.collection('users').authWithPassword(identity, password)
-
-      if (pb.authStore.model.account_disabled) {
-        setDisabledAccount(true)
-      }
+      console.log('Logged in successfully:', pb.authStore.model)
     } catch (err) {
-      console.error(err)
-      setError('Incorrect email/username or password, or your account is not verified yet')
+      if (err.response?.mfaId) {
+        // Password was correct, but this account has MFA enabled.
+        // Request an OTP code to complete the second factor.
+        try {
+          const result = await pb.collection('users').requestOTP(identity)
+          setOtpId(result.otpId)
+          setMfaId(err.response.mfaId)
+        } catch (otpErr) {
+          console.error('OTP request error:', otpErr)
+          setError('Something went wrong sending your login code. Please try again.')
+        }
+      } else {
+        console.error(err)
+        setError('Incorrect email or password, or your account is not verified yet')
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  const handleReactivate = async () => {
-    setReactivating(true)
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault()
+    setMfaError('')
+
+    if (!otpCode.trim()) {
+      setMfaError('Enter the code sent to your email')
+      return
+    }
+
+    setMfaLoading(true)
     try {
-      await pb.collection('users').update(pb.authStore.model.id, { account_disabled: false })
-      await pb.collection('users').authRefresh()
-      setDisabledAccount(false)
+      await pb.collection('users').authWithOTP(otpId, otpCode.trim(), { mfaId })
+      console.log('Logged in successfully with MFA:', pb.authStore.model)
     } catch (err) {
-      console.error('Reactivate error:', err)
-      setError('Something went wrong reactivating your account')
+      console.error('OTP verify error:', err)
+      setMfaError('Incorrect or expired code')
     } finally {
-      setReactivating(false)
+      setMfaLoading(false)
     }
   }
 
-  const handleCancelReactivate = () => {
-    pb.authStore.clear()
-    setDisabledAccount(false)
-  }
-
-  if (disabledAccount) {
+  if (mfaId) {
     return (
       <div>
-        <h1>Your account is disabled</h1>
-        <p>You chose to temporarily disable your account. Reactivate it now to continue?</p>
-        <button onClick={handleReactivate} disabled={reactivating}>
-          {reactivating ? 'Reactivating...' : 'Reactivate My Account'}
-        </button>
-        <button onClick={handleCancelReactivate}>Log Out</button>
+        <h1>Enter your login code</h1>
+        <p>We sent a one-time code to your email. It expires in a few minutes.</p>
+        <form onSubmit={handleVerifyOtp}>
+          <input
+            type="text"
+            placeholder="Enter code"
+            value={otpCode}
+            onChange={(e) => setOtpCode(e.target.value)}
+          />
+          <button type="submit" disabled={mfaLoading}>
+            {mfaLoading ? 'Verifying...' : 'Verify'}
+          </button>
+        </form>
+        {mfaError && <p style={{ color: 'red' }}>{mfaError}</p>}
       </div>
     )
   }
@@ -72,10 +95,10 @@ function Login() {
       <h1>Log in to Orbit</h1>
       <form onSubmit={handleSubmit}>
         <div>
-          <label>Email or Username</label>
+          <label>Email</label>
           <br />
           <input
-            type="text"
+            type="email"
             value={identity}
             onChange={(e) => setIdentity(e.target.value)}
             required

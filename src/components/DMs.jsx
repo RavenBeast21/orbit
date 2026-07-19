@@ -1,14 +1,17 @@
 // DMs.jsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import pb from '../pocketbase'
 
-function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest }) {
+function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest, setActiveConversation }) {
   const [threads, setThreads] = useState([])
   const [activeThread, setActiveThread] = useState(null)
   const [messages, setMessages] = useState([])
   const [content, setContent] = useState('')
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
+  const [closeFriendIds, setCloseFriendIds] = useState([])
+
+  const hasOpenedRef = useRef(false)
 
   const uid = pb.authStore.model.id
 
@@ -35,10 +38,37 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest }) {
     }
   }
 
+  const loadCloseFriends = async () => {
+    try {
+      const records = await pb.collection('close_friends').getFullList({
+        filter: `user="${uid}"`,
+      })
+      setCloseFriendIds(records.map((r) => r.friend))
+    } catch (err) {
+      console.error('Close friends load error:', err)
+    }
+  }
+
+  const isFriendWith = async (targetUserId) => {
+    const friendsA = await pb.collection('friends').getFullList({
+      filter: `user_a="${uid}" && user_b="${targetUserId}"`,
+    })
+    const friendsB = await pb.collection('friends').getFullList({
+      filter: `user_a="${targetUserId}" && user_b="${uid}"`,
+    })
+    return friendsA.length > 0 || friendsB.length > 0
+  }
+
   const openOrCreateThread = async (targetUserId) => {
     setError('')
 
     try {
+      const areFriends = await isFriendWith(targetUserId)
+      if (!areFriends) {
+        setError('You can only DM your friends')
+        return
+      }
+
       const targetUser = await pb.collection('users').getOne(targetUserId)
 
       if (targetUser.dm_privacy === 'no_one') {
@@ -70,12 +100,73 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest }) {
     }
   }
 
+  const toggleCloseFriend = async (targetUserId) => {
+    try {
+      if (closeFriendIds.includes(targetUserId)) {
+        const records = await pb.collection('close_friends').getFullList({
+          filter: `user="${uid}" && friend="${targetUserId}"`,
+        })
+        if (records[0]) {
+          await pb.collection('close_friends').delete(records[0].id)
+        }
+      } else {
+        await pb.collection('close_friends').create({
+          user: uid,
+          friend: targetUserId,
+        })
+      }
+      loadCloseFriends()
+    } catch (err) {
+      console.error('Close friend toggle error:', err)
+    }
+  }
+
   useEffect(() => {
     loadThreads()
+    loadCloseFriends()
 
-    if (openThreadWithUserId) {
+    if (openThreadWithUserId && !hasOpenedRef.current) {
+      hasOpenedRef.current = true
       openOrCreateThread(openThreadWithUserId)
       clearOpenThreadRequest()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (setActiveConversation) {
+      if (activeThread) {
+        setActiveConversation({ type: 'dm', id: activeThread.id })
+      } else {
+        setActiveConversation(null)
+      }
+    }
+  }, [activeThread])
+
+  useEffect(() => {
+    let unsub
+
+    pb.collection('users').subscribe('*', (e) => {
+      if (e.action !== 'update') return
+
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.otherUser?.id === e.record.id
+            ? { ...t, otherUser: { ...t.otherUser, status: e.record.status } }
+            : t
+        )
+      )
+
+      setActiveThread((prev) =>
+        prev && prev.otherUser?.id === e.record.id
+          ? { ...prev, otherUser: { ...prev.otherUser, status: e.record.status } }
+          : prev
+      )
+    }).then((fn) => {
+      unsub = fn
+    })
+
+    return () => {
+      if (unsub) unsub()
     }
   }, [])
 
@@ -97,6 +188,8 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest }) {
 
     loadMessages(activeThread.id)
 
+    let unsub
+
     pb.collection('dm_messages').subscribe('*', async (e) => {
       if (e.record.dm_thread !== activeThread.id) return
       if (e.action === 'create') {
@@ -104,17 +197,13 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest }) {
           expand: 'sender',
         })
         setMessages((prev) => [...prev, fullRecord])
-
-        const isOwnMessage = e.record.sender === pb.authStore.model.id
-        if (!isOwnMessage && pb.authStore.model.notif_message_sound) {
-          const audio = new Audio('/notification.mp3')
-          audio.play().catch((err) => console.error('Notification sound error:', err))
-        }
       }
+    }).then((fn) => {
+      unsub = fn
     })
 
     return () => {
-      pb.collection('dm_messages').unsubscribe('*')
+      if (unsub) unsub()
     }
   }, [activeThread])
 
@@ -148,12 +237,25 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest }) {
     return (
       <div>
         <button onClick={() => setActiveThread(null)}>← Back to inbox</button>
-        <h1>{activeThread.otherUser?.name || 'Unknown'}</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {activeThread.otherUser?.avatar ? (
+            <img src={pb.files.getURL(activeThread.otherUser, activeThread.otherUser.avatar, { thumb: '32x32' })} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+          ) : (
+            <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#333' }} />
+          )}
+          {activeThread.otherUser?.name || 'Unknown'}{' '}
+          ({activeThread.otherUser?.status === 'invisible' ? 'offline' : (activeThread.otherUser?.status || 'online')})
+        </h1>
 
         <div>
           {messages.length === 0 && <p>No messages yet.</p>}
           {messages.map((msg) => (
-            <div key={msg.id} style={{ fontSize: 'var(--orbit-text-size, 16px)' }}>
+            <div key={msg.id} style={{ fontSize: 'var(--orbit-text-size, 16px)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+              {msg.expand?.sender?.avatar ? (
+                <img src={pb.files.getURL(msg.expand.sender, msg.expand.sender.avatar, { thumb: '24x24' })} alt="" style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#333' }} />
+              )}
               <strong>{msg.expand?.sender?.name || 'Unknown'}</strong>: {msg.content}
             </div>
           ))}
@@ -175,6 +277,26 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest }) {
     )
   }
 
+  const closeThreads = threads.filter((t) => closeFriendIds.includes(t.otherUser?.id))
+  const normalThreads = threads.filter((t) => !closeFriendIds.includes(t.otherUser?.id))
+
+  const renderThreadRow = (thread) => (
+    <li key={thread.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <button onClick={() => setActiveThread(thread)} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {thread.otherUser?.avatar ? (
+          <img src={pb.files.getURL(thread.otherUser, thread.otherUser.avatar, { thumb: '32x32' })} alt="" style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }} />
+        ) : (
+          <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#333' }} />
+        )}
+        {thread.otherUser?.name || 'Unknown'} (@{thread.otherUser?.username}){' '}
+        — {thread.otherUser?.status === 'invisible' ? 'offline' : (thread.otherUser?.status || 'online')}
+      </button>
+      <button onClick={() => toggleCloseFriend(thread.otherUser?.id)}>
+        {closeFriendIds.includes(thread.otherUser?.id) ? '★ Remove Close Friend' : '☆ Make Close Friend'}
+      </button>
+    </li>
+  )
+
   return (
     <div>
       <button onClick={onBack}>← Back</button>
@@ -182,15 +304,20 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest }) {
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
       {threads.length === 0 && <p>No conversations yet.</p>}
-      <ul>
-        {threads.map((thread) => (
-          <li key={thread.id}>
-            <button onClick={() => setActiveThread(thread)}>
-              {thread.otherUser?.name || 'Unknown'} (@{thread.otherUser?.username})
-            </button>
-          </li>
-        ))}
-      </ul>
+
+      {closeThreads.length > 0 && (
+        <>
+          <h2>Close Friends</h2>
+          <ul>{closeThreads.map(renderThreadRow)}</ul>
+        </>
+      )}
+
+      {normalThreads.length > 0 && (
+        <>
+          <h2>Normal Friends</h2>
+          <ul>{normalThreads.map(renderThreadRow)}</ul>
+        </>
+      )}
     </div>
   )
 }
