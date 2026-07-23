@@ -1,6 +1,7 @@
 // DMs.jsx
 import { useState, useEffect, useRef } from 'react'
 import pb from '../pocketbase'
+import { ensureKeypair, getMyPrivateKey, encryptMessage, decryptMessage } from '../crypto'
 
 function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest, setActiveConversation }) {
   const [threads, setThreads] = useState([])
@@ -122,6 +123,7 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest, setActiveCo
   }
 
   useEffect(() => {
+    ensureKeypair()
     loadThreads()
     loadCloseFriends()
 
@@ -151,14 +153,14 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest, setActiveCo
       setThreads((prev) =>
         prev.map((t) =>
           t.otherUser?.id === e.record.id
-            ? { ...t, otherUser: { ...t.otherUser, status: e.record.status } }
+            ? { ...t, otherUser: { ...t.otherUser, status: e.record.status, public_key: e.record.public_key } }
             : t
         )
       )
 
       setActiveThread((prev) =>
         prev && prev.otherUser?.id === e.record.id
-          ? { ...prev, otherUser: { ...prev.otherUser, status: e.record.status } }
+          ? { ...prev, otherUser: { ...prev.otherUser, status: e.record.status, public_key: e.record.public_key } }
           : prev
       )
     }).then((fn) => {
@@ -216,13 +218,28 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest, setActiveCo
       return
     }
 
+    const theirPublicKey = activeThread.otherUser?.public_key
+    const myPrivateKey = getMyPrivateKey()
+
+    if (!theirPublicKey) {
+      setError(`${activeThread.otherUser?.name || 'This user'} hasn't set up encryption yet — they need to log in once on the updated app before you can message them.`)
+      return
+    }
+
+    if (!myPrivateKey) {
+      setError('Your encryption key is missing on this device. Try refreshing the page.')
+      return
+    }
+
     setSending(true)
 
     try {
+      const encryptedContent = encryptMessage(content, theirPublicKey, myPrivateKey)
+
       await pb.collection('dm_messages').create({
         dm_thread: activeThread.id,
         sender: uid,
-        content,
+        content: encryptedContent,
       })
       setContent('')
     } catch (err) {
@@ -231,6 +248,24 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest, setActiveCo
     } finally {
       setSending(false)
     }
+  }
+
+  const renderMessageText = (msg) => {
+    const theirPublicKey = activeThread?.otherUser?.public_key
+    const myPrivateKey = getMyPrivateKey()
+
+    if (!theirPublicKey || !myPrivateKey) {
+      console.warn('[Orbit E2EE] Cannot decrypt message right now — missing key at render time:', {
+        messageId: msg.id,
+        haveTheirPublicKey: !!theirPublicKey,
+        haveMyPrivateKey: !!myPrivateKey,
+        activeThreadOtherUser: activeThread?.otherUser,
+      })
+      return '[Decrypting...]'
+    }
+
+    const { text } = decryptMessage(msg.content, theirPublicKey, myPrivateKey)
+    return text
   }
 
   if (activeThread) {
@@ -256,7 +291,7 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest, setActiveCo
               ) : (
                 <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#333' }} />
               )}
-              <strong>{msg.expand?.sender?.name || 'Unknown'}</strong>: {msg.content}
+              <strong>{msg.expand?.sender?.name || 'Unknown'}</strong>: {renderMessageText(msg)}
             </div>
           ))}
         </div>

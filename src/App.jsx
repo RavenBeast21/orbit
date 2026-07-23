@@ -283,9 +283,16 @@ function App() {
             role: 'member',
           })
 
-          await pb.collection('invites').update(invite.id, {
-            uses: invite.uses + 1,
-          })
+          const newUses = invite.uses + 1
+          const hasReachedLimit = invite.max_users && newUses >= invite.max_users
+
+          if (hasReachedLimit) {
+            await pb.collection('invites').delete(invite.id)
+          } else {
+            await pb.collection('invites').update(invite.id, {
+              uses: newUses,
+            })
+          }
         }
       }
 

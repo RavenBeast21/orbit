@@ -13,7 +13,9 @@
     "livekit-client": "^2.20.1",
     "pocketbase": "^0.27.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

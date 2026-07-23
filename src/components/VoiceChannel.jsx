@@ -24,10 +24,14 @@ function VoiceChannel({ channel, onBack }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           room: channel.id,
-          identity: pb.authStore.model.id,
-          name: pb.authStore.model.name,
+          token: pb.authStore.token,
         }),
       })
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error || 'Could not get a voice token')
+      }
 
       const data = await response.json()
 
@@ -76,7 +80,7 @@ function VoiceChannel({ channel, onBack }) {
       updateParticipants(room)
     } catch (err) {
       console.error(err)
-      setError('Could not join voice channel. Make sure the token server is running.')
+      setError(err.message || 'Could not join voice channel. Make sure the token server is running.')
     } finally {
       setConnecting(false)
     }

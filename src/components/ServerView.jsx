@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import pb from '../pocketbase'
 import ChannelView from './ChannelView'
 import VoiceChannel from './VoiceChannel'
+import RolesManager from './RolesManager.jsx'
 
 function ServerView({ server, onBack, setActiveConversation }) {
+  const [showRolesManager, setShowRolesManager] = useState(false)
   const [channels, setChannels] = useState([])
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [channelName, setChannelName] = useState('')
@@ -257,6 +259,10 @@ function ServerView({ server, onBack, setActiveConversation }) {
     return <ChannelView channel={activeChannel} onBack={() => setActiveChannel(null)} setActiveConversation={setActiveConversation} />
   }
 
+  if (showRolesManager) {
+    return <RolesManager server={server} onClose={() => setShowRolesManager(false)} />
+  }
+
   return (
     <div>
       <button onClick={onBack}>← Back to your servers</button>
@@ -279,6 +285,13 @@ function ServerView({ server, onBack, setActiveConversation }) {
         <p style={{ color: 'gray' }}>
           Per-server notification settings for owners aren't supported yet — this needs a schema change since owners don't have a membership record.
         </p>
+      )}
+
+      {isOwner && (
+        <div>
+          <hr />
+          <button onClick={() => setShowRolesManager(true)}>Manage Roles</button>
+        </div>
       )}
 
       {isOwner && (
