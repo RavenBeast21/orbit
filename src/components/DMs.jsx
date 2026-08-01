@@ -11,6 +11,12 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest, setActiveCo
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
   const [closeFriendIds, setCloseFriendIds] = useState([])
+  const [reportingId, setReportingId] = useState(null)
+  const [reportReason, setReportReason] = useState('')
+  const [reportStatus, setReportStatus] = useState('')
+  const [reportConsent, setReportConsent] = useState(false)
+  const [pendingConsentRequest, setPendingConsentRequest] = useState(null)
+  const [consentResponding, setConsentResponding] = useState(false)
 
   const hasOpenedRef = useRef(false)
 
@@ -189,6 +195,7 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest, setActiveCo
     if (!activeThread) return
 
     loadMessages(activeThread.id)
+    checkPendingConsentRequest(activeThread.id)
 
     let unsub
 
@@ -250,6 +257,70 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest, setActiveCo
     }
   }
 
+  const handleSubmitReport = async (messageId) => {
+    if (!reportReason.trim()) {
+      setReportStatus('Please enter a reason')
+      return
+    }
+
+    try {
+      const report = await pb.collection('reports').create({
+        reported_by: uid,
+        target_type: 'dm_message',
+        target_id: messageId,
+        reason: reportReason,
+        status: 'pending',
+      })
+
+      if (reportConsent && activeThread) {
+        await pb.collection('dm_search_consents').create({
+          report: report.id,
+          thread: activeThread.id,
+          target_user: uid,
+          status: 'granted',
+        })
+      }
+
+      setReportStatus('Report submitted')
+      setReportReason('')
+      setReportConsent(false)
+      setTimeout(() => {
+        setReportingId(null)
+        setReportStatus('')
+      }, 1500)
+    } catch (err) {
+      console.error(err)
+      setReportStatus('Something went wrong submitting the report')
+    }
+  }
+
+  const checkPendingConsentRequest = async (threadId) => {
+    try {
+      const records = await pb.collection('dm_search_consents').getFullList({
+        filter: `thread="${threadId}" && target_user="${uid}" && status="pending"`,
+      })
+      setPendingConsentRequest(records[0] || null)
+    } catch (err) {
+      console.error('Check consent request error:', err)
+      setPendingConsentRequest(null)
+    }
+  }
+
+  const handleRespondToConsentRequest = async (approve) => {
+    if (!pendingConsentRequest) return
+    setConsentResponding(true)
+    try {
+      await pb.collection('dm_search_consents').update(pendingConsentRequest.id, {
+        status: approve ? 'granted' : 'denied',
+      })
+      setPendingConsentRequest(null)
+    } catch (err) {
+      console.error('Respond to consent request error:', err)
+    } finally {
+      setConsentResponding(false)
+    }
+  }
+
   const renderMessageText = (msg) => {
     const theirPublicKey = activeThread?.otherUser?.public_key
     const myPrivateKey = getMyPrivateKey()
@@ -282,6 +353,21 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest, setActiveCo
           ({activeThread.otherUser?.status === 'invisible' ? 'offline' : (activeThread.otherUser?.status || 'online')})
         </h1>
 
+        {pendingConsentRequest && (
+          <div style={{ border: '1px solid orange', borderRadius: '6px', padding: '12px', marginBottom: '12px' }}>
+            <p>
+              A moderator has requested to review this ENTIRE conversation as part of investigating a report you filed. Do you consent?
+            </p>
+            <button onClick={() => handleRespondToConsentRequest(true)} disabled={consentResponding}>
+              Approve
+            </button>
+            {' '}
+            <button onClick={() => handleRespondToConsentRequest(false)} disabled={consentResponding}>
+              Deny
+            </button>
+          </div>
+        )}
+
         <div>
           {messages.length === 0 && <p>No messages yet.</p>}
           {messages.map((msg) => (
@@ -292,6 +378,33 @@ function DMs({ onBack, openThreadWithUserId, clearOpenThreadRequest, setActiveCo
                 <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#333' }} />
               )}
               <strong>{msg.expand?.sender?.name || 'Unknown'}</strong>: {renderMessageText(msg)}
+              {' '}
+              <button onClick={() => setReportingId(reportingId === msg.id ? null : msg.id)}>
+                Report
+              </button>
+
+              {reportingId === msg.id && (
+                <div>
+                  <input
+                    type="text"
+                    placeholder="Reason for report"
+                    value={reportReason}
+                    onChange={(e) => setReportReason(e.target.value)}
+                  />
+                  <div>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={reportConsent}
+                        onChange={(e) => setReportConsent(e.target.checked)}
+                      />
+                      {' '}Allow a moderator to review the ENTIRE conversation (not just this message) while investigating this report
+                    </label>
+                  </div>
+                  <button onClick={() => handleSubmitReport(msg.id)}>Submit Report</button>
+                  {reportStatus && <p>{reportStatus}</p>}
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react'
 import { Room, RoomEvent } from 'livekit-client'
 import pb from '../pocketbase'
+import MembersSidebar from './MembersSidebar'
 
-function VoiceChannel({ channel, onBack }) {
+function VoiceChannel({ channel, onBack, members, ownerName, ownerStatus, ownerAvatarUrl }) {
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [muted, setMuted] = useState(false)
@@ -136,45 +137,56 @@ function VoiceChannel({ channel, onBack }) {
   }
 
   return (
-    <div>
-      <button onClick={onBack}>← Back</button>
-      <h1>🔊 {channel.name}</h1>
+    <div style={{ display: 'flex' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <button onClick={onBack}>← Back</button>
+        <h1>🔊 {channel.name}</h1>
 
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+        {error && <p style={{ color: 'red' }}>{error}</p>}
 
-      {!connected && (
-        <button onClick={handleJoin} disabled={connecting}>
-          {connecting ? 'Joining...' : 'Join Voice'}
-        </button>
-      )}
-
-      {connected && (
-        <div>
-          <p>You're connected.</p>
-          <button onClick={handleToggleMute}>{muted ? 'Unmute' : 'Mute'}</button>
-          {' '}
-          <button onClick={handleToggleCamera}>
-            {cameraOn ? 'Turn Camera Off' : 'Turn Camera On'}
+        {!connected && (
+          <button onClick={handleJoin} disabled={connecting}>
+            {connecting ? 'Joining...' : 'Join Voice'}
           </button>
-          {' '}
-          <button onClick={handleLeave} style={{ color: 'red' }}>
-            Leave
-          </button>
+        )}
 
-          <h3>In this channel:</h3>
-          <p>{pb.authStore.model.name} (you)</p>
-          <ul>
-            {participants.map((name) => (
-              <li key={name}>{name}</li>
-            ))}
-          </ul>
+        {connected && (
+          <div>
+            <p>You're connected.</p>
+            <button onClick={handleToggleMute}>{muted ? 'Unmute' : 'Mute'}</button>
+            {' '}
+            <button onClick={handleToggleCamera}>
+              {cameraOn ? 'Turn Camera Off' : 'Turn Camera On'}
+            </button>
+            {' '}
+            <button onClick={handleLeave} style={{ color: 'red' }}>
+              Leave
+            </button>
 
-          <h3>Video</h3>
-          <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-            <div ref={localVideoRef}></div>
-            <div ref={remoteVideosRef} style={{ display: 'flex', flexWrap: 'wrap' }}></div>
+            <h3>In this channel:</h3>
+            <p>{pb.authStore.model.name} (you)</p>
+            <ul>
+              {participants.map((name) => (
+                <li key={name}>{name}</li>
+              ))}
+            </ul>
+
+            <h3>Video</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+              <div ref={localVideoRef}></div>
+              <div ref={remoteVideosRef} style={{ display: 'flex', flexWrap: 'wrap' }}></div>
+            </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      {members && (
+        <MembersSidebar
+          members={members}
+          ownerName={ownerName}
+          ownerStatus={ownerStatus}
+          ownerAvatarUrl={ownerAvatarUrl}
+        />
       )}
     </div>
   )

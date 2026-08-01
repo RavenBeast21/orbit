@@ -8,6 +8,8 @@ import ServerView from './components/ServerView'
 import Friends from './components/Friends'
 import DMs from './components/DMs'
 import Settings from './components/Settings'
+import ReportsQueue from './components/ReportsQueue'
+import Discovery from './components/Discovery'
 
 function App() {
   const [view, setView] = useState('login')
@@ -271,6 +273,16 @@ function App() {
 
       const server = await pb.collection('servers').getOne(invite.server)
 
+      const existingBan = await pb.collection('bans').getFullList({
+        filter: `user="${uid}" && server="${server.id}"`,
+      })
+
+      if (existingBan.length > 0) {
+        setJoinError('You are banned from this server')
+        setJoinLoading(false)
+        return
+      }
+
       if (server.owner !== uid) {
         const existingMembership = await pb.collection('members').getFullList({
           filter: `user="${uid}" && server="${server.id}"`,
@@ -333,6 +345,9 @@ function App() {
     if (page === 'settings') {
       return <Settings onBack={() => setPage('welcome')} />
     }
+    if (page === 'reports') {
+      return <ReportsQueue onBack={() => setPage('welcome')} />
+    }
     if (page === 'dms') {
       return (
         <DMs
@@ -350,6 +365,17 @@ function App() {
           onMessageFriend={(userId) => {
             setDmTargetUserId(userId)
             setPage('dms')
+          }}
+        />
+      )
+    }
+    if (page === 'discovery') {
+      return (
+        <Discovery
+          onBack={() => setPage('welcome')}
+          onJoined={(server) => {
+            setActiveServer(server)
+            setPage('serverView')
           }}
         />
       )
@@ -373,8 +399,12 @@ function App() {
         <p>You're logged in as @{pb.authStore.model.username}</p>
         <button onClick={() => setPage('createServer')}>Create a Server</button>
         <button onClick={() => setPage('friends')}>Friends</button>
+        <button onClick={() => setPage('discovery')}>Discover Servers</button>
         <button onClick={() => setPage('dms')}>Messages</button>
         <button onClick={() => setPage('settings')}>⚙️ Settings</button>
+        {pb.authStore.model.is_developer && (
+          <button onClick={() => setPage('reports')}>View Reports</button>
+        )}
         <br />
         <br />
         <button onClick={handleLogout}>Log Out</button>

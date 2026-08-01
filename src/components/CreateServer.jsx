@@ -6,6 +6,8 @@ function CreateServer({ onCreated }) {
   const [name, setName] = useState('')
   const [type, setType] = useState('friends')
   const [discoveryVisible, setDiscoveryVisible] = useState(false)
+  const [description, setDescription] = useState('')
+  const [category, setCategory] = useState('Gaming')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -25,6 +27,8 @@ function CreateServer({ onCreated }) {
         name,
         type,
         discovery_visible: type === 'community' ? discoveryVisible : false,
+        description: type === 'community' ? description : '',
+        category: type === 'community' ? category : '',
         owner: pb.authStore.model.id,
       })
 
@@ -72,6 +76,35 @@ function CreateServer({ onCreated }) {
               />
               Show this server on the discovery page
             </label>
+
+            {discoveryVisible && (
+              <>
+                <div>
+                  <label>Description</label>
+                  <br />
+                  <textarea
+                    rows={3}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="What's this server about?"
+                  />
+                </div>
+
+                <div>
+                  <label>Category</label>
+                  <br />
+                  <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                    <option value="Gaming">Gaming</option>
+                    <option value="Music">Music</option>
+                    <option value="Education">Education</option>
+                    <option value="Technology">Technology</option>
+                    <option value="Art & Design">Art & Design</option>
+                    <option value="Community">Community</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </>
+            )}
           </div>
         )}
 

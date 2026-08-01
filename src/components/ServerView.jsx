@@ -2,14 +2,33 @@ import { useState, useEffect } from 'react'
 import pb from '../pocketbase'
 import ChannelView from './ChannelView'
 import VoiceChannel from './VoiceChannel'
-import RolesManager from './RolesManager.jsx'
+import RolesManager from './RolesManager'
+import ChannelPermissions from './ChannelPermissions'
+import CategoryPermissions from './CategoryPermissions'
+import { hasPermission, hasChannelPermission, hasCategoryPermission } from '../permissions'
 
 function ServerView({ server, onBack, setActiveConversation }) {
   const [showRolesManager, setShowRolesManager] = useState(false)
+  const [permissionsChannel, setPermissionsChannel] = useState(null)
+  const [permissionsCategory, setPermissionsCategory] = useState(null)
+  const [canManageRoles, setCanManageRoles] = useState(false)
+  const [canManageChannels, setCanManageChannels] = useState(false)
+  const [canKickMembers, setCanKickMembers] = useState(false)
+  const [canBanMembers, setCanBanMembers] = useState(false)
+  const [canTimeoutMembers, setCanTimeoutMembers] = useState(false)
   const [channels, setChannels] = useState([])
-  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [visibleChannels, setVisibleChannels] = useState([])
+  const [channelManageAccess, setChannelManageAccess] = useState({})
+  const [categories, setCategories] = useState([])
+  const [categoryManageAccess, setCategoryManageAccess] = useState({})
+  const [collapsedCategories, setCollapsedCategories] = useState(new Set())
+  const [showCreateCategory, setShowCreateCategory] = useState(false)
+  const [categoryName, setCategoryName] = useState('')
+  const [categoryError, setCategoryError] = useState('')
+  const [showCreateChannelModal, setShowCreateChannelModal] = useState(false)
   const [channelName, setChannelName] = useState('')
   const [channelType, setChannelType] = useState('text')
+  const [channelCategoryId, setChannelCategoryId] = useState('')
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [loading, setLoading] = useState(false)
@@ -59,7 +78,7 @@ function ServerView({ server, onBack, setActiveConversation }) {
         created_by: uid,
         uses: 0,
       }
-      if (inviteMaxUses.trim()) data.max_uses = Number(inviteMaxUses)
+      if (inviteMaxUses.trim()) data.max_users = Number(inviteMaxUses)
       if (inviteExpiry) data.expires_at = new Date(inviteExpiry).toISOString()
 
       await pb.collection('invites').create(data)
@@ -100,8 +119,74 @@ function ServerView({ server, onBack, setActiveConversation }) {
         filter: `server="${server.id}"`,
       })
       setChannels(records)
+
+      const visibilityChecks = await Promise.all(
+        records.map((c) => hasChannelPermission(uid, server, c, 'view_channel'))
+      )
+      setVisibleChannels(records.filter((_, i) => visibilityChecks[i]))
+
+      const manageChecks = await Promise.all(
+        records.map((c) => hasChannelPermission(uid, server, c, 'manage_channels'))
+      )
+      const manageMap = {}
+      records.forEach((c, i) => { manageMap[c.id] = manageChecks[i] })
+      setChannelManageAccess(manageMap)
     } catch (err) {
       console.error(err)
+    }
+  }
+
+  const loadCategories = async () => {
+    try {
+      const records = await pb.collection('categories').getFullList({
+        filter: `server="${server.id}"`,
+      })
+      records.sort((a, b) => a.position - b.position)
+      setCategories(records)
+
+      const manageChecks = await Promise.all(
+        records.map((c) => hasCategoryPermission(uid, server, c, 'manage_channels'))
+      )
+      const manageMap = {}
+      records.forEach((c, i) => { manageMap[c.id] = manageChecks[i] })
+      setCategoryManageAccess(manageMap)
+    } catch (err) {
+      console.error('Load categories error:', err)
+    }
+  }
+
+  const toggleCategoryCollapsed = (categoryId) => {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(categoryId)) {
+        next.delete(categoryId)
+      } else {
+        next.add(categoryId)
+      }
+      return next
+    })
+  }
+
+  const handleCreateCategory = async () => {
+    setCategoryError('')
+
+    if (!categoryName.trim()) {
+      setCategoryError('Category name is required')
+      return
+    }
+
+    try {
+      await pb.collection('categories').create({
+        name: categoryName.trim(),
+        server: server.id,
+        position: categories.length + 1,
+      })
+      setCategoryName('')
+      setShowCreateCategory(false)
+      loadCategories()
+    } catch (err) {
+      console.error('Create category error:', err)
+      setCategoryError(err.message || 'Something went wrong creating that category')
     }
   }
 
@@ -136,11 +221,25 @@ function ServerView({ server, onBack, setActiveConversation }) {
 
   useEffect(() => {
     loadChannels()
+    loadCategories()
     loadMembers()
     loadOwnerName()
+    hasPermission(uid, server, 'manage_roles').then(setCanManageRoles)
+    hasPermission(uid, server, 'manage_channels').then(setCanManageChannels)
+    hasPermission(uid, server, 'kick_members').then(setCanKickMembers)
+    hasPermission(uid, server, 'ban_members').then(setCanBanMembers)
+    hasPermission(uid, server, 'timeout_members').then(setCanTimeoutMembers)
 
     let unsubMembers
     let unsubUsers
+    let unsubCategories
+
+    pb.collection('categories').subscribe('*', (e) => {
+      if (e.record.server !== server.id) return
+      loadCategories()
+    }).then((fn) => {
+      unsubCategories = fn
+    })
 
     pb.collection('members').subscribe('*', (e) => {
       if (e.record.server !== server.id) return
@@ -170,6 +269,7 @@ function ServerView({ server, onBack, setActiveConversation }) {
     return () => {
       if (unsubMembers) unsubMembers()
       if (unsubUsers) unsubUsers()
+      if (unsubCategories) unsubCategories()
     }
   }, [])
 
@@ -190,27 +290,20 @@ function ServerView({ server, onBack, setActiveConversation }) {
         name: channelName,
         server: server.id,
         type: channelType,
+        category: channelCategoryId || null,
       })
 
       setSuccessMessage('Channel successfully created')
       setChannelName('')
       setChannelType('text')
-      setShowCreateForm(false)
+      setChannelCategoryId('')
+      setShowCreateChannelModal(false)
       loadChannels()
     } catch (err) {
       console.error(err)
       setError(err.message || 'Something went wrong creating the channel')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleChangeRole = async (memberId, newRole) => {
-    try {
-      await pb.collection('members').update(memberId, { role: newRole })
-      loadMembers()
-    } catch (err) {
-      console.error(err)
     }
   }
 
@@ -222,6 +315,39 @@ function ServerView({ server, onBack, setActiveConversation }) {
       onBack()
     } catch (err) {
       console.error(err)
+    }
+  }
+
+  const handleKick = async (memberId) => {
+    try {
+      await pb.collection('members').delete(memberId)
+    } catch (err) {
+      console.error('Kick error:', err)
+    }
+  }
+
+  const handleBan = async (member) => {
+    try {
+      await pb.collection('bans').create({
+        user: member.user,
+        server: server.id,
+        banned_by: uid,
+        reason: '',
+      })
+      await pb.collection('members').delete(member.id)
+    } catch (err) {
+      console.error('Ban error:', err)
+    }
+  }
+
+  const handleTimeout = async (memberId) => {
+    try {
+      const until = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
+      await pb.collection('members').update(memberId, {
+        timed_out_until: until.toISOString(),
+      })
+    } catch (err) {
+      console.error('Timeout error:', err)
     }
   }
 
@@ -252,15 +378,62 @@ function ServerView({ server, onBack, setActiveConversation }) {
   }
 
   if (activeChannel && activeChannel.type === 'voice') {
-    return <VoiceChannel channel={activeChannel} onBack={() => setActiveChannel(null)} />
+    return (
+      <VoiceChannel
+        channel={activeChannel}
+        onBack={() => setActiveChannel(null)}
+        members={members}
+        ownerName={ownerName}
+        ownerStatus={ownerStatus}
+        ownerAvatarUrl={ownerAvatarUrl}
+      />
+    )
   }
 
   if (activeChannel) {
-    return <ChannelView channel={activeChannel} onBack={() => setActiveChannel(null)} setActiveConversation={setActiveConversation} />
+    return (
+      <ChannelView
+        channel={activeChannel}
+        server={server}
+        onBack={() => setActiveChannel(null)}
+        setActiveConversation={setActiveConversation}
+        members={members}
+        ownerName={ownerName}
+        ownerStatus={ownerStatus}
+        ownerAvatarUrl={ownerAvatarUrl}
+      />
+    )
   }
 
   if (showRolesManager) {
     return <RolesManager server={server} onClose={() => setShowRolesManager(false)} />
+  }
+
+  if (permissionsChannel) {
+    return (
+      <ChannelPermissions
+        channel={permissionsChannel}
+        server={server}
+        onClose={() => {
+          setPermissionsChannel(null)
+          loadChannels()
+        }}
+      />
+    )
+  }
+
+  if (permissionsCategory) {
+    return (
+      <CategoryPermissions
+        category={permissionsCategory}
+        server={server}
+        onClose={() => {
+          setPermissionsCategory(null)
+          loadCategories()
+          loadChannels()
+        }}
+      />
+    )
   }
 
   return (
@@ -287,7 +460,7 @@ function ServerView({ server, onBack, setActiveConversation }) {
         </p>
       )}
 
-      {isOwner && (
+      {(isOwner || canManageRoles) && (
         <div>
           <hr />
           <button onClick={() => setShowRolesManager(true)}>Manage Roles</button>
@@ -368,47 +541,205 @@ function ServerView({ server, onBack, setActiveConversation }) {
 
       <h2>Channels</h2>
       {successMessage && <p style={{ color: 'lightgreen' }}>{successMessage}</p>}
+      {categoryError && <p style={{ color: 'red' }}>{categoryError}</p>}
 
-      <ul>
-        {channels.map((channel) => (
+      {(() => {
+        const uncategorized = visibleChannels.filter((c) => !c.category)
+        const renderChannel = (channel) => (
           <li key={channel.id}>
             <button onClick={() => setActiveChannel(channel)}>
               {channel.type === 'voice' ? '🔊' : '#'} {channel.name}
             </button>
+            {' '}
+            {(isOwner || canManageChannels || channelManageAccess[channel.id]) && (
+              <button onClick={() => setPermissionsChannel(channel)}>⚙ Settings</button>
+            )}
           </li>
-        ))}
-      </ul>
+        )
 
-      {channels.length === 0 && <p>No channels yet.</p>}
+        return (
+          <>
+            {uncategorized.length > 0 && (
+              <ul style={{ listStyle: 'none', paddingLeft: 0 }}>
+                {uncategorized.map(renderChannel)}
+              </ul>
+            )}
 
-      {isOwner && (
-        <>
-          {!showCreateForm && (
-            <button onClick={() => setShowCreateForm(true)}>Create Channel</button>
+            {categories.map((category) => {
+              const categoryChannels = visibleChannels.filter((c) => c.category === category.id)
+              const isCollapsed = collapsedCategories.has(category.id)
+
+              return (
+                <div key={category.id} style={{ marginTop: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span
+                      onClick={() => toggleCategoryCollapsed(category.id)}
+                      style={{ cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+                    >
+                      {isCollapsed ? '▶' : '▼'} {category.name.toUpperCase()}
+                    </span>
+
+                    {(isOwner || canManageChannels || categoryManageAccess[category.id]) && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setChannelCategoryId(category.id)
+                            setShowCreateChannelModal(true)
+                          }}
+                        >
+                          +
+                        </button>
+                        <button onClick={() => setPermissionsCategory(category)}>⚙</button>
+                      </>
+                    )}
+                  </div>
+
+                  {!isCollapsed && (
+                    <ul style={{ listStyle: 'none', paddingLeft: '16px' }}>
+                      {categoryChannels.map(renderChannel)}
+                      {categoryChannels.length === 0 && (
+                        <li style={{ color: 'gray', fontSize: '0.9em' }}>No channels in this category.</li>
+                      )}
+                    </ul>
+                  )}
+                </div>
+              )
+            })}
+
+            {visibleChannels.length === 0 && <p>No channels yet.</p>}
+          </>
+        )
+      })()}
+
+      {(isOwner || canManageChannels) && (
+        <div style={{ marginTop: '12px' }}>
+          {!showCreateCategory && (
+            <button onClick={() => setShowCreateCategory(true)}>+ Add Category</button>
           )}
-
-          {showCreateForm && (
-            <form onSubmit={handleCreateChannel}>
+          {showCreateCategory && (
+            <div>
               <input
                 type="text"
-                placeholder="Channel name"
-                value={channelName}
-                onChange={(e) => setChannelName(e.target.value)}
+                placeholder="New Category"
+                value={categoryName}
+                onChange={(e) => setCategoryName(e.target.value)}
               />
-              <select value={channelType} onChange={(e) => setChannelType(e.target.value)}>
-                <option value="text">Text</option>
-                <option value="voice">Voice</option>
-              </select>
-              <button type="submit" disabled={loading}>
-                {loading ? 'Creating...' : 'Create'}
-              </button>
-              <button type="button" onClick={() => setShowCreateForm(false)}>
+              <button onClick={handleCreateCategory}>Save</button>
+              <button onClick={() => { setShowCreateCategory(false); setCategoryName(''); setCategoryError('') }}>
                 Cancel
               </button>
-              {error && <p style={{ color: 'red' }}>{error}</p>}
-            </form>
+            </div>
           )}
-        </>
+        </div>
+      )}
+
+      {(isOwner || canManageChannels) && (
+        <button
+          onClick={() => {
+            setChannelCategoryId('')
+            setShowCreateChannelModal(true)
+          }}
+        >
+          Create Channel
+        </button>
+      )}
+
+      {showCreateChannelModal && (
+        <div
+          onClick={() => setShowCreateChannelModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: '#1a1a1a',
+              border: '1px solid #333',
+              borderRadius: '8px',
+              padding: '24px',
+              width: '360px',
+            }}
+          >
+            <h2 style={{ marginTop: 0 }}>Create Channel</h2>
+            {channelCategoryId && (
+              <p style={{ color: 'gray', marginTop: '-8px' }}>
+                in {categories.find((c) => c.id === channelCategoryId)?.name || 'category'}
+              </p>
+            )}
+
+            <form onSubmit={handleCreateChannel}>
+              <div style={{ marginBottom: '12px' }}>
+                <label>Channel Type</label>
+                <br />
+                <label style={{ marginRight: '16px' }}>
+                  <input
+                    type="radio"
+                    name="channelType"
+                    value="text"
+                    checked={channelType === 'text'}
+                    onChange={() => setChannelType('text')}
+                  />
+                  {' '}# Text
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="channelType"
+                    value="voice"
+                    checked={channelType === 'voice'}
+                    onChange={() => setChannelType('voice')}
+                  />
+                  {' '}🔊 Voice
+                </label>
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label>Channel Name</label>
+                <br />
+                <input
+                  type="text"
+                  autoFocus
+                  value={channelName}
+                  onChange={(e) => setChannelName(e.target.value)}
+                />
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label>Category</label>
+                <br />
+                <select value={channelCategoryId} onChange={(e) => setChannelCategoryId(e.target.value)}>
+                  <option value="">No category</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {error && <p style={{ color: 'red' }}>{error}</p>}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button type="button" onClick={() => setShowCreateChannelModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={loading}>
+                  {loading ? 'Creating...' : 'Create Channel'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       <hr />
@@ -430,20 +761,24 @@ function ServerView({ server, onBack, setActiveConversation }) {
             ) : (
               <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#333' }} />
             )}
-            {member.expand?.user?.name || 'Unknown'} ({member.expand?.user?.status === 'invisible' ? 'offline' : (member.expand?.user?.status || 'online')}) — {member.role}
-            {isOwner && (
-              <>
-                {' '}
-                {member.role === 'member' ? (
-                  <button onClick={() => handleChangeRole(member.id, 'mod')}>
-                    Promote to Mod
-                  </button>
-                ) : (
-                  <button onClick={() => handleChangeRole(member.id, 'member')}>
-                    Demote to Member
-                  </button>
-                )}
-              </>
+            {member.expand?.user?.name || 'Unknown'} ({member.expand?.user?.status === 'invisible' ? 'offline' : (member.expand?.user?.status || 'online')})
+            {' '}
+            {(isOwner || canKickMembers) && (
+              <button onClick={() => handleKick(member.id)} style={{ color: 'orange' }}>
+                Kick
+              </button>
+            )}
+            {' '}
+            {(isOwner || canBanMembers) && (
+              <button onClick={() => handleBan(member)} style={{ color: 'red' }}>
+                Ban
+              </button>
+            )}
+            {' '}
+            {(isOwner || canTimeoutMembers) && (
+              <button onClick={() => handleTimeout(member.id)} style={{ color: 'yellow' }}>
+                Timeout (10m)
+              </button>
             )}
             {' '}
             <button
