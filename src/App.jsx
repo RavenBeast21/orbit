@@ -10,6 +10,7 @@ import DMs from './components/DMs'
 import Settings from './components/Settings'
 import ReportsQueue from './components/ReportsQueue'
 import Discovery from './components/Discovery'
+import Billing from './components/Billing'
 
 function App() {
   const [view, setView] = useState('login')
@@ -380,6 +381,9 @@ function App() {
         />
       )
     }
+    if (page === 'billing') {
+      return <Billing onBack={() => setPage('welcome')} />
+    }
     if (page === 'serverView' && activeServer) {
       return (
         <ServerView
@@ -400,6 +404,7 @@ function App() {
         <button onClick={() => setPage('createServer')}>Create a Server</button>
         <button onClick={() => setPage('friends')}>Friends</button>
         <button onClick={() => setPage('discovery')}>Discover Servers</button>
+        <button onClick={() => setPage('billing')}>⭐ Orbit+</button>
         <button onClick={() => setPage('dms')}>Messages</button>
         <button onClick={() => setPage('settings')}>⚙️ Settings</button>
         {pb.authStore.model.is_developer && (
