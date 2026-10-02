@@ -1,9 +1,10 @@
 import nacl from 'tweetnacl'
 import naclUtil from 'tweetnacl-util'
 import pb from './pocketbase'
+import { TOKEN_SERVER_URL } from './config'
 
 // Same server that issues LiveKit tokens now also handles key storage/unlock.
-const KEY_SERVER_URL = 'http://localhost:3001'
+const KEY_SERVER_URL = TOKEN_SERVER_URL
 
 // Storage keys are scoped per user ID — localStorage is shared by the
 // whole browser, so without this, switching between two Orbit accounts
@@ -142,6 +143,39 @@ export function getMyPrivateKey() {
 
   const { priv } = storageKeys(uid)
   return localStorage.getItem(priv)
+}
+
+// Full reset for an account whose original keypair is unrecoverable
+// (predates the /keys/store backup system, only ever lived in some
+// other device's now-cleared localStorage). Wipes the server-side
+// public_key/encrypted_private_key AND this device's local cache, then
+// generates a brand-new keypair via ensureKeypair() — which this time
+// WILL get properly backed up server-side, since encrypted_private_key
+// is now empty (see server.js's /keys/store "never overwrite" guard).
+//
+// WARNING: every past DM sent to/from this account becomes permanently
+// undecryptable once this runs — the old public_key it was encrypted
+// against is gone. Only call this with explicit user confirmation.
+export async function resetKeypair() {
+  const uid = pb.authStore.model?.id
+  if (!uid) return null
+
+  const response = await fetch(`${KEY_SERVER_URL}/keys/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: pb.authStore.token }),
+  })
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}))
+    throw new Error(errData.error || 'Failed to reset key on the server')
+  }
+
+  const { priv, pub } = storageKeys(uid)
+  localStorage.removeItem(priv)
+  localStorage.removeItem(pub)
+
+  return ensureKeypair()
 }
 
 // Encrypts plaintext for a specific recipient. Returns a JSON string

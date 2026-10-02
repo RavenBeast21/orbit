@@ -1,0 +1,798 @@
+/* profile-features.css — import this once, e.g. in App.jsx: import './profile-features.css' */
+
+/* ---------- Right-click context menu ---------- */
+.user-context-menu {
+  z-index: 2000;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.user-context-menu-item {
+  background: transparent;
+  border: none;
+  color: var(--text-h);
+  text-align: left;
+  font-weight: 500;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.user-context-menu-item:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.user-context-menu-item-danger {
+  color: var(--danger);
+}
+
+.user-context-menu-item-danger:hover:not(:disabled) {
+  background: var(--danger-bg);
+}
+
+.user-context-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+
+/* ---------- Server-scoped profile popup (left-click) ---------- */
+.server-profile-popup {
+  z-index: 2000;
+  width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.server-profile-popup-loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--text);
+}
+
+.server-profile-popup-banner {
+  height: 80px;
+  background-color: var(--surface-2);
+  background-size: cover;
+  background-position: center;
+}
+
+.server-profile-popup-avatar-wrap {
+  margin: -32px 16px 0;
+}
+
+.server-profile-popup-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 4px solid var(--surface);
+  object-fit: cover;
+  display: block;
+}
+
+.server-profile-popup-avatar-fallback {
+  background: var(--accent);
+}
+
+.server-profile-popup-body {
+  padding: 12px 16px 16px;
+}
+
+.server-profile-popup-name {
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--text-h);
+}
+
+.server-profile-popup-username {
+  color: var(--text);
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.server-profile-popup-bio {
+  font-size: 14px;
+  color: var(--text-h);
+  margin: 8px 0;
+  white-space: pre-wrap;
+}
+
+.server-profile-popup-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.server-profile-popup-role-pill {
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 2px 10px;
+}
+
+.server-profile-popup-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.server-profile-popup-actions button {
+  flex: 1;
+}
+
+/* ---------- Full profile modal ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+}
+
+.full-profile-modal {
+  width: 420px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  position: relative;
+}
+
+.modal-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.full-profile-modal-loading {
+  padding: 60px 24px;
+  text-align: center;
+  color: var(--text);
+}
+
+.full-profile-modal-banner {
+  height: 120px;
+  background-color: var(--surface-2);
+  background-size: cover;
+  background-position: center;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.full-profile-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0 20px;
+}
+
+.full-profile-modal-avatar-wrap {
+  margin-top: -48px;
+}
+
+.full-profile-modal-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 5px solid var(--surface);
+  object-fit: cover;
+  display: block;
+}
+
+.full-profile-modal-avatar-fallback {
+  background: var(--accent);
+}
+
+.full-profile-modal-menu-wrap {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.full-profile-modal-menu-trigger {
+  background: var(--surface-2);
+  border-radius: var(--radius-full);
+  padding: 8px 14px;
+}
+
+.full-profile-modal-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 10;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.full-profile-modal-body {
+  padding: 12px 20px 20px;
+}
+
+.full-profile-modal-name {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.full-profile-modal-username {
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.full-profile-modal-section {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.full-profile-modal-section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.full-profile-modal-bio {
+  white-space: pre-wrap;
+  color: var(--text-h);
+}
+
+.full-profile-modal-actions {
+  margin-top: 12px;
+}
+
+/* ---------- DM call overlay ---------- */
+.dm-call-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 16px;
+  margin: 12px 16px 0;
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+.dm-call-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.dm-call-avatar-fallback {
+  background: var(--accent);
+}
+
+.dm-call-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.channel-topbar-call-btn {
+  margin-left: auto;
+  background: var(--surface-2);
+  border-radius: var(--radius-full);
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+/* ---------- My Account popup (HomeSidebar) ---------- */
+.my-account-popup {
+  z-index: 2000;
+  width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.my-account-popup-banner {
+  height: 80px;
+  background-color: var(--surface-2);
+  background-size: cover;
+  background-position: center;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.my-account-popup-avatar-wrap {
+  position: relative;
+  margin: -32px 16px 0;
+  width: fit-content;
+}
+
+.my-account-popup-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 4px solid var(--surface);
+  object-fit: cover;
+  display: block;
+}
+
+.my-account-popup-avatar-fallback {
+  background: var(--accent);
+}
+
+.my-account-popup-status-dot {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 3px solid var(--surface);
+}
+
+.my-account-popup-body {
+  padding: 12px 16px 16px;
+}
+
+.my-account-popup-name {
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--text-h);
+}
+
+.my-account-popup-username {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.my-account-popup-bio {
+  font-size: 14px;
+  color: var(--text-h);
+  margin: 8px 0;
+  white-space: pre-wrap;
+}
+
+.my-account-popup-edit-btn {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.my-account-popup-status-picker {
+  position: relative;
+  margin-top: 8px;
+}
+
+.my-account-popup-status-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+}
+
+.my-account-popup-status-dot-inline {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.my-account-popup-status-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.my-account-popup-status-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-h);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.my-account-popup-status-menu-item:hover {
+  background: var(--surface-2);
+}
+
+.home-sidebar-status-menu-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ---------- Message attachments (server messages) ---------- */
+.message-composer-attachment-preview {
+  position: relative;
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
+.message-composer-attachment-preview img {
+  max-height: 120px;
+  border-radius: var(--radius-sm);
+  display: block;
+}
+
+.message-composer-attachment-preview button {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  padding: 0;
+  background: var(--danger);
+  color: #fff;
+}
+
+.message-attachment-image {
+  max-width: 320px;
+  max-height: 320px;
+  border-radius: var(--radius);
+  margin-top: 6px;
+  display: block;
+  cursor: pointer;
+}
+
+.dm-image-reveal-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+}
+
+/* ---------- FilteredImage (relationship blur + NSFW scan) ---------- */
+.filtered-image-wrap {
+  position: relative;
+  width: fit-content;
+  margin-top: 6px;
+}
+
+.filtered-image-blurred {
+  filter: blur(24px);
+}
+
+.filtered-image-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: center;
+  padding: 8px;
+}
+
+.filtered-image-overlay span {
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------- Link spam filter ---------- */
+.dm-link-block-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--danger-bg);
+  border: 1px dashed var(--danger);
+  color: var(--danger);
+}
+
+/* ---------- Profile editor modal ---------- */
+.profile-editor-modal {
+  width: 460px;
+  max-width: 90vw;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  position: relative;
+}
+
+.profile-editor-preview-section {
+  border-bottom: 1px solid var(--border);
+}
+
+.profile-editor-preview-banner {
+  height: 100px;
+  background-color: var(--surface-2);
+  background-size: cover;
+  background-position: center;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.profile-editor-preview-avatar-wrap {
+  margin: -40px 20px 0;
+  width: fit-content;
+}
+
+.profile-editor-preview-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 5px solid var(--surface);
+  object-fit: cover;
+  display: block;
+}
+
+.profile-editor-preview-avatar-fallback {
+  background: var(--accent);
+}
+
+.profile-editor-preview-body {
+  padding: 10px 20px 16px;
+}
+
+.profile-editor-preview-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.profile-editor-preview-username {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.profile-editor-preview-bio {
+  font-size: 13px;
+  color: var(--text-h);
+  margin-top: 6px;
+  white-space: pre-wrap;
+}
+
+.profile-editor-fields {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.profile-editor-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.profile-editor-field textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+}
+
+.profile-editor-field input[type='text'] {
+  width: 100%;
+}
+
+.profile-editor-file-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.profile-editor-colour-swatches {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.profile-editor-colour-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  padding: 0;
+  border: 2px solid transparent;
+}
+
+.profile-editor-colour-swatch.selected {
+  border-color: var(--text-h);
+}
+
+.profile-editor-colour-swatches input[type='color'] {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.profile-editor-hint {
+  font-size: 12px;
+  color: var(--text);
+  margin: 6px 0 0;
+}
+
+.profile-editor-char-count {
+  font-size: 12px;
+  margin-top: 4px;
+  text-align: right;
+}
+
+.profile-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ---------- MyAccountPopup: avatar hover-edit ---------- */
+.my-account-popup-avatar-hover-target {
+  position: relative;
+  width: fit-content;
+}
+
+.my-account-popup-avatar-edit-btn {
+  position: absolute;
+  inset: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0);
+  border: none;
+  color: transparent;
+  font-size: 20px;
+  padding: 0;
+  opacity: 0;
+  transition: background-color 0.12s ease, opacity 0.12s ease, color 0.12s ease;
+}
+
+.my-account-popup-avatar-hover-target:hover .my-account-popup-avatar-edit-btn {
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  opacity: 1;
+}
+
+.my-account-popup-avatar-menu {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: -6px;
+  z-index: 20;
+  min-width: 170px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- MyAccountPopup: status flyout (hover-driven, opens right) ---------- */
+.my-account-popup-status-picker {
+  position: relative;
+  margin-top: 8px;
+}
+
+.my-account-popup-status-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+}
+
+.my-account-popup-status-dot-inline {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.my-account-popup-status-flyout {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: -6px;
+  z-index: 15;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.my-account-popup-status-flyout.opens-upward {
+  top: auto;
+  bottom: 0;
+}
+
+.my-account-popup-status-flyout-row {
+  position: relative;
+}
+
+.my-account-popup-status-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-h);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.my-account-popup-status-menu-item:hover {
+  background: var(--surface-2);
+}
+
+.my-account-popup-duration-flyout {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: -6px;
+  z-index: 16;
+  min-width: 160px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.my-account-popup-duration-flyout.opens-upward {
+  top: auto;
+  bottom: 0;
+}

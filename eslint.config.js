@@ -5,7 +5,11 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // `dist` is build output, and `public/ort` is the vendored onnxruntime-web
+  // bundle copied in at runtime (see AGENTS.md). Linting those minified
+  // vendor files produced thousands of meaningless errors and drowned out
+  // real ones — only first-party source under src/ should be linted.
+  globalIgnores(['dist', 'public/ort/**', 'public/models/**']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

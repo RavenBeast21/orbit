@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import pb from '../pocketbase'
 
-const REPORTS_KEY_SERVER_URL = 'http://localhost:3001'
+import { TOKEN_SERVER_URL } from '../config'
+
+const REPORTS_KEY_SERVER_URL = TOKEN_SERVER_URL
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -271,11 +273,11 @@ function ReportsQueue({ onBack }) {
     const detail = details[report.id]
 
     if (!detail) {
-      return <p style={{ color: 'gray' }}>Loading details...</p>
+      return <p style={{ color: 'var(--text)' }}>Loading details...</p>
     }
 
     if (detail.loadError) {
-      return <p style={{ color: 'gray' }}>The reported content may have already been removed.</p>
+      return <p style={{ color: 'var(--text)' }}>The reported content may have already been removed.</p>
     }
 
     if (report.target_type === 'server' && detail.server) {
@@ -292,11 +294,11 @@ function ReportsQueue({ onBack }) {
           {detail.user.avatar ? (
             <img src={pb.files.getURL(detail.user, detail.user.avatar, { thumb: '32x32' })} alt="" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
           ) : (
-            <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: '#333' }} />
+            <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: 'var(--surface-2)' }} />
           )}
           <div>
             <div>{detail.user.name} (@{detail.user.username})</div>
-            {detail.user.bio && <div style={{ color: 'gray', fontSize: '0.9em' }}>{detail.user.bio}</div>}
+            {detail.user.bio && <div style={{ color: 'var(--text)', fontSize: '0.9em' }}>{detail.user.bio}</div>}
           </div>
         </div>
       )
@@ -308,8 +310,8 @@ function ReportsQueue({ onBack }) {
           <p>
             <strong>{detail.message.expand?.sender?.name || 'Unknown'}</strong> in <strong>{detail.server?.name}</strong> #{detail.channel?.name}
           </p>
-          <p style={{ color: 'lightgray' }}>{detail.message.content}</p>
-          <p style={{ color: 'gray', fontSize: '0.85em' }}>{new Date(detail.message.created).toLocaleString()}</p>
+          <p style={{ color: 'var(--text)' }}>{detail.message.content}</p>
+          <p style={{ color: 'var(--text)', fontSize: '0.85em' }}>{new Date(detail.message.created).toLocaleString()}</p>
         </div>
       )
     }
@@ -337,7 +339,7 @@ function ReportsQueue({ onBack }) {
           )}
 
           {report.claimed_by && !isAuthorized && (
-            <p style={{ color: 'gray' }}>
+            <p style={{ color: 'var(--text)' }}>
               This report has been claimed by another dev. Ask them to add you via Request Support to view its content.
             </p>
           )}
@@ -351,23 +353,23 @@ function ReportsQueue({ onBack }) {
               )}
 
               {decrypted && decrypted.error && (
-                <p style={{ color: 'red' }}>{decrypted.error}</p>
+                <p style={{ color: 'var(--danger)' }}>{decrypted.error}</p>
               )}
 
               {decrypted && !decrypted.error && (
                 <div>
-                  <p style={{ color: 'lightgray' }}>{decrypted.text}</p>
-                  <p style={{ color: 'gray', fontSize: '0.85em' }}>
+                  <p style={{ color: 'var(--text)' }}>{decrypted.text}</p>
+                  <p style={{ color: 'var(--text)', fontSize: '0.85em' }}>
                     {decrypted.senderName} → {decrypted.otherParticipantName}
                   </p>
                 </div>
               )}
 
-              <hr style={{ borderColor: '#333', margin: '12px 0' }} />
+              <hr style={{ borderColor: 'var(--border)', margin: '12px 0' }} />
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '0.8em', color: 'gray', textTransform: 'uppercase' }}>
+                  <span style={{ fontSize: '0.8em', color: 'var(--text)', textTransform: 'uppercase' }}>
                     Full conversation access
                   </span>
                   {report.claimed_by === uid && (
@@ -387,12 +389,12 @@ function ReportsQueue({ onBack }) {
                     />
                     <button onClick={() => handleAddSupportDev(report)}>Add</button>
                     <button onClick={() => { setAddingSupportFor(null); setSupportUsername('') }}>Cancel</button>
-                    {supportError && <p style={{ color: 'red', fontSize: '0.85em' }}>{supportError}</p>}
+                    {supportError && <p style={{ color: 'var(--danger)', fontSize: '0.85em' }}>{supportError}</p>}
                   </div>
                 )}
 
                 {supportDevs.length > 0 && (
-                  <p style={{ fontSize: '0.85em', color: 'gray' }}>
+                  <p style={{ fontSize: '0.85em', color: 'var(--text)' }}>
                     Also has access: {supportDevs.length} dev(s)
                   </p>
                 )}
@@ -408,7 +410,7 @@ function ReportsQueue({ onBack }) {
                 )}
 
                 {consent && consent.status === 'denied' && (
-                  <p style={{ color: 'red' }}>Consent was denied for this report.</p>
+                  <p style={{ color: 'var(--danger)' }}>Consent was denied for this report.</p>
                 )}
 
                 {consent && consent.status === 'granted' && !thread && (
@@ -418,15 +420,15 @@ function ReportsQueue({ onBack }) {
                 )}
 
                 {thread && thread.error && (
-                  <p style={{ color: 'red' }}>{thread.error}</p>
+                  <p style={{ color: 'var(--danger)' }}>{thread.error}</p>
                 )}
 
                 {thread && thread.messages && (
-                  <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #333', borderRadius: '4px', padding: '8px', marginTop: '8px' }}>
+                  <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '4px', padding: '8px', marginTop: '8px' }}>
                     {thread.messages.map((m) => (
                       <p key={m.id} style={{ margin: '4px 0' }}>
                         <strong>{m.senderName}</strong>
-                        {' '}<span style={{ color: 'gray', fontSize: '0.8em' }}>{new Date(m.created).toLocaleString()}</span>
+                        {' '}<span style={{ color: 'var(--text)', fontSize: '0.8em' }}>{new Date(m.created).toLocaleString()}</span>
                         <br />
                         {m.text}
                       </p>
@@ -440,49 +442,44 @@ function ReportsQueue({ onBack }) {
       )
     }
 
-    return <p style={{ color: 'gray' }}>No further details available.</p>
+    return <p style={{ color: 'var(--text)' }}>No further details available.</p>
   }
 
   return (
-    <div>
-      <button onClick={onBack}>← Back</button>
+    <div className="panel">
       <h1>Reports</h1>
 
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
 
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', gap: '8px', margin: '16px 0', flexWrap: 'wrap' }}>
         {FILTERS.map((f) => (
           <button
             key={f.key}
             onClick={() => setFilter(f.key)}
-            style={{
-              backgroundColor: filter === f.key ? '#333' : 'transparent',
-              border: '1px solid #333',
-              borderRadius: '4px',
-            }}
+            className={filter === f.key ? 'btn-primary' : ''}
           >
             {f.label}
           </button>
         ))}
       </div>
 
-      {loading && <p>Loading reports...</p>}
+      {loading && <p style={{ color: 'var(--text)' }}>Loading reports...</p>}
 
-      {!loading && filteredReports.length === 0 && <p>No reports here.</p>}
+      {!loading && filteredReports.length === 0 && <p style={{ color: 'var(--text)' }}>No reports here.</p>}
 
       {filteredReports.map((report) => (
-        <div key={report.id} style={{ border: '1px solid #333', borderRadius: '6px', padding: '12px', marginBottom: '12px' }}>
+        <div key={report.id} className="report-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <span style={{ fontSize: '0.8em', color: 'gray', textTransform: 'uppercase' }}>
+              <span style={{ fontSize: '0.8em', color: 'var(--text)', textTransform: 'uppercase' }}>
                 {FILTERS.find((f) => f.key === report.target_type)?.label || report.target_type}
               </span>
               <p><strong>Reason:</strong> {report.reason}</p>
             </div>
             <button
+              className="btn-primary"
               onClick={() => handleResolve(report.id)}
               disabled={resolvingId === report.id}
-              style={{ color: 'lightgreen' }}
             >
               {resolvingId === report.id ? 'Dismissing...' : 'Dismiss & Delete'}
             </button>

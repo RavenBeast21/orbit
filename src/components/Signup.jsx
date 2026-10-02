@@ -7,7 +7,7 @@ function Signup() {
   const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [dmPrivacy, setDmPrivacy] = useState('everyone')
+  const [dmPrivacy, setDmPrivacy] = useState('request_to_dm')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -126,6 +126,28 @@ function Signup() {
 
         <div>
           <label>Who can DM you?</label>
+          <br />
+          <label>
+            <input
+              type="radio"
+              name="dmPrivacy"
+              value="request_to_dm"
+              checked={dmPrivacy === 'request_to_dm'}
+              onChange={(e) => setDmPrivacy(e.target.value)}
+            />
+            Request to DM (recommended)
+          </label>
+          <br />
+          <label>
+            <input
+              type="radio"
+              name="dmPrivacy"
+              value="friends_only"
+              checked={dmPrivacy === 'friends_only'}
+              onChange={(e) => setDmPrivacy(e.target.value)}
+            />
+            Friends only
+          </label>
           <br />
           <label>
             <input

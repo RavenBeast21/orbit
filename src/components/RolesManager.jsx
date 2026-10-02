@@ -46,7 +46,7 @@ const PERMISSION_GROUPS = [
 
 const ALL_PERMISSION_KEYS = PERMISSION_GROUPS.flatMap((g) => g.permissions.map((p) => p[0]))
 
-const DEFAULT_ROLE_COLOUR = '#99AAB5'
+const DEFAULT_ROLE_COLOUR = '#99aab5'
 
 function RolesManager({ server, onClose }) {
   const [roles, setRoles] = useState([])
@@ -62,6 +62,7 @@ function RolesManager({ server, onClose }) {
   // Editor local state (only meaningful while a role is selected)
   const [editName, setEditName] = useState('')
   const [editColour, setEditColour] = useState(DEFAULT_ROLE_COLOUR)
+  const [editDisplaySeparately, setEditDisplaySeparately] = useState(false)
   const [editPerms, setEditPerms] = useState({})
   const [saving, setSaving] = useState(false)
 
@@ -75,6 +76,11 @@ function RolesManager({ server, onClose }) {
     try {
       const records = await pb.collection('roles').getFullList({
         filter: `server="${server.id}"`,
+        requestKey: null, // this fires alongside loadAllServerMembers/loadOwnerUser and
+        // other components' own subscription-triggered reloads (e.g.
+        // MembersSidebar) — without this, PocketBase's SDK auto-cancels
+        // one of these near-simultaneous requests, which was silently
+        // dropping the role-editor's own refresh after a save.
       })
       records.sort((a, b) => b.position - a.position)
       setRoles(records)
@@ -83,6 +89,7 @@ function RolesManager({ server, onClose }) {
       for (const role of records) {
         const links = await pb.collection('member_roles').getFullList({
           filter: `role="${role.id}"`,
+          requestKey: null,
         })
         counts[role.id] = links.length
       }
@@ -93,11 +100,14 @@ function RolesManager({ server, onClose }) {
     }
   }
 
+  const [ownerUser, setOwnerUser] = useState(null)
+
   const loadAllServerMembers = async () => {
     try {
       const records = await pb.collection('members').getFullList({
         filter: `server="${server.id}"`,
         expand: 'user',
+        requestKey: null,
       })
       setAllServerMembers(records)
     } catch (err) {
@@ -105,9 +115,19 @@ function RolesManager({ server, onClose }) {
     }
   }
 
+  const loadOwnerUser = async () => {
+    try {
+      const user = await pb.collection('users').getOne(server.owner, { requestKey: null })
+      setOwnerUser(user)
+    } catch (err) {
+      console.error('Load owner user error:', err)
+    }
+  }
+
   useEffect(() => {
     loadRoles()
     loadAllServerMembers()
+    loadOwnerUser()
   }, [])
 
   const selectedRole = roles.find((r) => r.id === selectedRoleId) || null
@@ -116,7 +136,8 @@ function RolesManager({ server, onClose }) {
     if (!selectedRole) return
 
     setEditName(selectedRole.name)
-    setEditColour(selectedRole.colour || DEFAULT_ROLE_COLOUR)
+    setEditColour((selectedRole.colour || DEFAULT_ROLE_COLOUR).toLowerCase())
+    setEditDisplaySeparately(!!selectedRole.display_separately)
 
     const perms = {}
     for (const key of ALL_PERMISSION_KEYS) {
@@ -132,6 +153,7 @@ function RolesManager({ server, onClose }) {
       const links = await pb.collection('member_roles').getFullList({
         filter: `role="${roleId}"`,
         expand: 'member,member.user',
+        requestKey: null,
       })
       setRoleMembers(links)
     } catch (err) {
@@ -184,19 +206,48 @@ function RolesManager({ server, onClose }) {
     }
   }
 
-  const handleMoveRole = async (roleId, direction) => {
-    const sorted = [...roles].sort((a, b) => b.position - a.position)
-    const index = sorted.findIndex((r) => r.id === roleId)
-    const swapIndex = direction === 'up' ? index - 1 : index + 1
+  const [dragIndex, setDragIndex] = useState(null)
+  const [dragOverIndex, setDragOverIndex] = useState(null)
 
-    if (swapIndex < 0 || swapIndex >= sorted.length) return
+  const handleDrop = async (targetIndex) => {
+    if (dragIndex === null || dragIndex === targetIndex) {
+      setDragIndex(null)
+      setDragOverIndex(null)
+      return
+    }
 
-    const a = sorted[index]
-    const b = sorted[swapIndex]
+    // Reorder within the FULL sorted role list, not the filtered/searched
+    // view — reordering while a search filter hides some roles would
+    // otherwise leave their positions stale relative to the moved ones.
+    const fullSorted = [...roles].sort((a, b) => b.position - a.position)
+    const draggedRole = filteredRoles[dragIndex]
+    const targetRole = filteredRoles[targetIndex]
+
+    const fromIndex = fullSorted.findIndex((r) => r.id === draggedRole.id)
+    const toIndex = fullSorted.findIndex((r) => r.id === targetRole.id)
+
+    const reordered = [...fullSorted]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+
+    setDragIndex(null)
+    setDragOverIndex(null)
 
     try {
-      await pb.collection('roles').update(a.id, { position: b.position })
-      await pb.collection('roles').update(b.id, { position: a.position })
+      // Highest position = highest rank = top of the list, matching the
+      // existing b.position - a.position sort used everywhere else.
+      // Only write the roles whose position actually changed.
+      const updates = reordered.map((role, i) => ({
+        id: role.id,
+        newPosition: reordered.length - i,
+      })).filter((u) => {
+        const original = fullSorted.find((r) => r.id === u.id)
+        return original.position !== u.newPosition
+      })
+
+      await Promise.all(
+        updates.map((u) => pb.collection('roles').update(u.id, { position: u.newPosition }))
+      )
       await loadRoles()
     } catch (err) {
       console.error('Reorder role error:', err)
@@ -211,6 +262,7 @@ function RolesManager({ server, onClose }) {
       const data = {
         name: editName,
         colour: editColour,
+        display_separately: editDisplaySeparately,
         ...editPerms,
       }
       await pb.collection('roles').update(selectedRole.id, data)
@@ -230,8 +282,33 @@ function RolesManager({ server, onClose }) {
   const handleAddMember = async (memberId) => {
     if (!selectedRole) return
     try {
+      let realMemberId = memberId
+
+      if (memberId === 'owner-pseudo') {
+        // The owner has no row in `members` by default (they're tracked
+        // separately via servers.owner, not membership) — roles can only
+        // attach to a real members row, so create one for them the first
+        // time they're given a role. loadMembers() elsewhere filters this
+        // row back OUT of every normal member-list display, so this never
+        // makes the owner show up as a duplicate regular member anywhere
+        // — it exists purely so member_roles has something to point at.
+        const existing = await pb.collection('members').getFullList({
+          filter: `server="${server.id}" && user="${server.owner}"`,
+        })
+        if (existing[0]) {
+          realMemberId = existing[0].id
+        } else {
+          const created = await pb.collection('members').create({
+            server: server.id,
+            user: server.owner,
+          })
+          realMemberId = created.id
+        }
+        await loadAllServerMembers()
+      }
+
       await pb.collection('member_roles').create({
-        member: memberId,
+        member: realMemberId,
         role: selectedRole.id,
       })
       await loadRoleMembers(selectedRole.id)
@@ -258,46 +335,75 @@ function RolesManager({ server, onClose }) {
     .sort((a, b) => b.position - a.position)
 
   const memberIdsWithRole = new Set(roleMembers.map((link) => link.member))
+  const ownerAlreadyHasRole = roleMembers.some((link) => link.expand?.member?.user === server.owner)
+
   const availableMembersToAdd = allServerMembers.filter(
     (m) => !memberIdsWithRole.has(m.id) &&
+      m.user !== server.owner && // owner's own lazily-created row (if any) is handled via the pseudo-entry below, not listed twice
       (m.expand?.user?.name || '').toLowerCase().includes(memberSearch.toLowerCase())
   )
+
+  if (
+    ownerUser &&
+    !ownerAlreadyHasRole &&
+    ownerUser.name.toLowerCase().includes(memberSearch.toLowerCase())
+  ) {
+    availableMembersToAdd.unshift({
+      id: 'owner-pseudo',
+      user: server.owner,
+      expand: { user: ownerUser },
+    })
+  }
 
   // -------------------------------------------------------------
   // ROLE EDITOR VIEW
   // -------------------------------------------------------------
   if (selectedRole) {
     return (
-      <div>
+      <div className="panel">
         <button onClick={() => setSelectedRoleId(null)}>← Back to Roles</button>
         <h2>Edit Role: {selectedRole.name}</h2>
 
-        <div>
-          <button onClick={() => setActiveTab('display')} disabled={activeTab === 'display'}>Display</button>
-          {' '}
-          <button onClick={() => setActiveTab('permissions')} disabled={activeTab === 'permissions'}>Permissions</button>
-          {' '}
-          <button onClick={() => setActiveTab('members')} disabled={activeTab === 'members'}>Members ({memberCounts[selectedRole.id] || 0})</button>
+        <div className="tab-row">
+          <button className={activeTab === 'display' ? 'tab-active' : ''} onClick={() => setActiveTab('display')} disabled={activeTab === 'display'}>Display</button>
+          <button className={activeTab === 'permissions' ? 'tab-active' : ''} onClick={() => setActiveTab('permissions')} disabled={activeTab === 'permissions'}>Permissions</button>
+          <button className={activeTab === 'members' ? 'tab-active' : ''} onClick={() => setActiveTab('members')} disabled={activeTab === 'members'}>Members ({memberCounts[selectedRole.id] || 0})</button>
         </div>
 
         <hr />
 
         {activeTab === 'display' && (
           <div>
-            <p style={{ color: 'gray' }}>Nothing here yet — more display options are coming later.</p>
+            <p style={{ color: 'var(--text)' }}>Nothing here yet — more display options are coming later.</p>
 
-            <label>Role name</label>
-            <br />
-            <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} />
+            <div className="form-field">
+              <label>Role name</label>
+              <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} />
+            </div>
 
-            <br /><br />
+            <div className="form-field">
+              <label>Role colour</label>
+              <br />
+              <input type="color" value={editColour} onChange={(e) => setEditColour(e.target.value)} />
+            </div>
 
-            <label>Role colour</label>
-            <br />
-            <input type="color" value={editColour} onChange={(e) => setEditColour(e.target.value)} />
+            <hr />
 
-            <br /><br />
-            <button onClick={handleSaveRole} disabled={saving}>
+            <div className="form-field" style={{ maxWidth: 'none' }}>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                <span>Display role members separately from online members</span>
+                <input
+                  type="checkbox"
+                  checked={editDisplaySeparately}
+                  onChange={(e) => setEditDisplaySeparately(e.target.checked)}
+                />
+              </label>
+              <p style={{ color: 'var(--text)', fontSize: '0.85em', margin: '4px 0 0' }}>
+                Members with this role get their own group at the top of the member list, in role order — highest role first.
+              </p>
+            </div>
+
+            <button className="btn-primary" onClick={handleSaveRole} disabled={saving}>
               {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
@@ -306,10 +412,10 @@ function RolesManager({ server, onClose }) {
         {activeTab === 'permissions' && (
           <div>
             {PERMISSION_GROUPS.map((group) => (
-              <div key={group.title}>
+              <div key={group.title} style={{ marginBottom: '16px' }}>
                 <h3>{group.title}</h3>
                 {group.permissions.map(([key, label, description]) => (
-                  <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  <div key={key} className="permission-row">
                     <input
                       type="checkbox"
                       checked={!!editPerms[key]}
@@ -319,14 +425,13 @@ function RolesManager({ server, onClose }) {
                     <label htmlFor={`perm-${key}`}>
                       <strong>{label}</strong>
                       <br />
-                      <span style={{ color: 'gray', fontSize: '0.9em' }}>{description}</span>
+                      <span style={{ color: 'var(--text)', fontSize: '0.9em' }}>{description}</span>
                     </label>
                   </div>
                 ))}
-                <hr />
               </div>
             ))}
-            <button onClick={handleSaveRole} disabled={saving}>
+            <button className="btn-primary" onClick={handleSaveRole} disabled={saving}>
               {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
@@ -334,27 +439,27 @@ function RolesManager({ server, onClose }) {
 
         {activeTab === 'members' && (
           <div>
-            <input
-              type="text"
-              placeholder="Search members with this role"
-              value={memberSearch}
-              onChange={(e) => setMemberSearch(e.target.value)}
-            />
-            {' '}
-            <button onClick={() => setShowAddMembers(!showAddMembers)}>
-              {showAddMembers ? 'Cancel' : 'Add Members'}
-            </button>
+            <div className="inline-form" style={{ marginBottom: '10px' }}>
+              <input
+                type="text"
+                placeholder="Search members with this role"
+                value={memberSearch}
+                onChange={(e) => setMemberSearch(e.target.value)}
+              />
+              <button onClick={() => setShowAddMembers(!showAddMembers)}>
+                {showAddMembers ? 'Cancel' : 'Add Members'}
+              </button>
+            </div>
 
             {showAddMembers && (
-              <div>
+              <div style={{ marginBottom: '16px' }}>
                 <h4>Add a member to this role:</h4>
-                {availableMembersToAdd.length === 0 && <p style={{ color: 'gray' }}>No matching members to add.</p>}
-                <ul>
+                {availableMembersToAdd.length === 0 && <p style={{ color: 'var(--text)' }}>No matching members to add.</p>}
+                <ul className="list-reset">
                   {availableMembersToAdd.map((m) => (
-                    <li key={m.id}>
-                      {m.expand?.user?.name || 'Unknown'}
-                      {' '}
-                      <button onClick={() => handleAddMember(m.id)}>Add</button>
+                    <li key={m.id} className="list-row">
+                      <span>{m.expand?.user?.name || 'Unknown'}</span>
+                      <button className="btn-primary" onClick={() => handleAddMember(m.id)}>Add</button>
                     </li>
                   ))}
                 </ul>
@@ -362,14 +467,16 @@ function RolesManager({ server, onClose }) {
             )}
 
             <h4>Members with this role:</h4>
-            <ul>
-              {roleMembers.length === 0 && <p style={{ color: 'gray' }}>No members have this role yet.</p>}
+            {roleMembers.length === 0 && <p style={{ color: 'var(--text)' }}>No members have this role yet.</p>}
+            <ul className="list-reset">
               {roleMembers
                 .filter((link) => (link.expand?.member?.expand?.user?.name || '').toLowerCase().includes(memberSearch.toLowerCase()))
                 .map((link) => (
-                  <li key={link.id}>
-                    {link.expand?.member?.expand?.user?.name || 'Unknown'}
-                    {' '}
+                  <li key={link.id} className="list-row">
+                    <span>
+                      {link.expand?.member?.expand?.user?.name || 'Unknown'}
+                      {link.expand?.member?.user === server.owner && ' 👑'}
+                    </span>
                     <button onClick={() => handleRemoveMember(link.id)}>✕</button>
                   </li>
                 ))}
@@ -378,7 +485,7 @@ function RolesManager({ server, onClose }) {
         )}
 
         <hr />
-        <button onClick={() => handleDeleteRole(selectedRole.id)} style={{ color: 'red' }}>
+        <button className="btn-danger" onClick={() => handleDeleteRole(selectedRole.id)}>
           Delete Role
         </button>
       </div>
@@ -389,23 +496,21 @@ function RolesManager({ server, onClose }) {
   // ROLE LIST VIEW
   // -------------------------------------------------------------
   return (
-    <div>
-      <button onClick={onClose}>← Back to Server</button>
+    <div className="panel">
       <h2>Roles</h2>
-      <p style={{ color: 'gray' }}>Use roles to group your server members and assign permissions.</p>
+      <p style={{ color: 'var(--text)' }}>Use roles to group your server members and assign permissions.</p>
 
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
 
-      <div>
+      <div className="inline-form">
         <input
           type="text"
           placeholder="Search Roles"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        {' '}
         {!showNewRoleInput && (
-          <button onClick={() => setShowNewRoleInput(true)}>Create Role</button>
+          <button className="btn-primary" onClick={() => setShowNewRoleInput(true)}>Create Role</button>
         )}
         {showNewRoleInput && (
           <>
@@ -417,11 +522,9 @@ function RolesManager({ server, onClose }) {
               autoFocus
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreateRole() }}
             />
-            {' '}
-            <button onClick={handleCreateRole} disabled={creating}>
+            <button className="btn-primary" onClick={handleCreateRole} disabled={creating}>
               {creating ? 'Saving...' : 'Save'}
             </button>
-            {' '}
             <button onClick={() => { setShowNewRoleInput(false); setNewRoleName('') }}>
               Cancel
             </button>
@@ -429,25 +532,33 @@ function RolesManager({ server, onClose }) {
         )}
       </div>
 
-      <p style={{ color: 'gray', fontSize: '0.9em' }}>
-        Members use the colour of the highest role they hold. Use the arrows to reorder roles — higher roles outrank lower ones.
+      <p style={{ color: 'var(--text)', fontSize: '0.9em' }}>
+        Members use the colour of the highest role they hold. {search.trim() ? 'Clear the search to drag-reorder roles.' : 'Drag roles to reorder — higher roles outrank lower ones.'}
       </p>
 
-      <ul>
+      <ul className="list-reset">
         {filteredRoles.map((role, index) => (
-          <li key={role.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: role.colour || DEFAULT_ROLE_COLOUR, display: 'inline-block' }} />
-            <button onClick={() => setSelectedRoleId(role.id)} style={{ flex: 1, textAlign: 'left' }}>
+          <li
+            key={role.id}
+            className={`list-row role-drag-row${dragOverIndex === index ? ' role-drag-row-over' : ''}`}
+            draggable={!search.trim()}
+            onDragStart={() => setDragIndex(index)}
+            onDragOver={(e) => { e.preventDefault(); setDragOverIndex(index) }}
+            onDragLeave={() => setDragOverIndex((prev) => (prev === index ? null : prev))}
+            onDrop={(e) => { e.preventDefault(); handleDrop(index) }}
+            onDragEnd={() => { setDragIndex(null); setDragOverIndex(null) }}
+          >
+            {!search.trim() && <span className="role-drag-handle">⠿</span>}
+            <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: role.colour || DEFAULT_ROLE_COLOUR, display: 'inline-block', flexShrink: 0 }} />
+            <button onClick={() => setSelectedRoleId(role.id)} style={{ flex: 1, textAlign: 'left', background: 'transparent', border: 'none', padding: '4px' }}>
               {role.name}
             </button>
-            <span>{memberCounts[role.id] || 0} members</span>
-            <button onClick={() => handleMoveRole(role.id, 'up')} disabled={index === 0}>↑</button>
-            <button onClick={() => handleMoveRole(role.id, 'down')} disabled={index === filteredRoles.length - 1}>↓</button>
+            <span style={{ color: 'var(--text)', fontSize: '0.85em' }}>{memberCounts[role.id] || 0} members</span>
           </li>
         ))}
       </ul>
 
-      {filteredRoles.length === 0 && <p>No roles yet — create one to get started.</p>}
+      {filteredRoles.length === 0 && <p style={{ color: 'var(--text)' }}>No roles yet — create one to get started.</p>}
     </div>
   )
 }

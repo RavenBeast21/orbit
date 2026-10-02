@@ -1,13 +1,16 @@
 // CreateServer.jsx
 import { useState } from 'react'
 import pb from '../pocketbase'
+import TagPicker from './TagPicker'
+import { sanitizeTags } from '../serverTags'
 
-function CreateServer({ onCreated }) {
+function CreateServer({ onCreated, joinServerId, setJoinServerId, onJoinServer, joinLoading, joinError }) {
   const [name, setName] = useState('')
   const [type, setType] = useState('friends')
   const [discoveryVisible, setDiscoveryVisible] = useState(false)
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('Gaming')
+  const [tags, setTags] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -29,6 +32,7 @@ function CreateServer({ onCreated }) {
         discovery_visible: type === 'community' ? discoveryVisible : false,
         description: type === 'community' ? description : '',
         category: type === 'community' ? category : '',
+        tags: type === 'community' && discoveryVisible ? sanitizeTags(tags) : [],
         owner: pb.authStore.model.id,
       })
 
@@ -42,12 +46,12 @@ function CreateServer({ onCreated }) {
   }
 
   return (
-    <div>
-      <h1>Create a Server</h1>
+    <div className="panel" style={{ maxWidth: '480px' }}>
+      <h1>Add a Server</h1>
+      <p style={{ color: 'var(--text)' }}>Your server is where you and your friends hang out. Make yours and start talking.</p>
       <form onSubmit={handleSubmit}>
-        <div>
+        <div className="form-field">
           <label>Server Name</label>
-          <br />
           <input
             type="text"
             value={name}
@@ -56,9 +60,8 @@ function CreateServer({ onCreated }) {
           />
         </div>
 
-        <div>
+        <div className="form-field">
           <label>Server Type</label>
-          <br />
           <select value={type} onChange={(e) => setType(e.target.value)}>
             <option value="friends">Friends (Invite Only)</option>
             <option value="community">Community</option>
@@ -67,8 +70,8 @@ function CreateServer({ onCreated }) {
         </div>
 
         {type === 'community' && (
-          <div>
-            <label>
+          <div className="form-field">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <input
                 type="checkbox"
                 checked={discoveryVisible}
@@ -79,9 +82,8 @@ function CreateServer({ onCreated }) {
 
             {discoveryVisible && (
               <>
-                <div>
+                <div className="form-field">
                   <label>Description</label>
-                  <br />
                   <textarea
                     rows={3}
                     value={description}
@@ -90,9 +92,8 @@ function CreateServer({ onCreated }) {
                   />
                 </div>
 
-                <div>
+                <div className="form-field">
                   <label>Category</label>
-                  <br />
                   <select value={category} onChange={(e) => setCategory(e.target.value)}>
                     <option value="Gaming">Gaming</option>
                     <option value="Music">Music</option>
@@ -103,17 +104,40 @@ function CreateServer({ onCreated }) {
                     <option value="Other">Other</option>
                   </select>
                 </div>
+
+                <div className="form-field form-field--tags">
+                  <TagPicker value={tags} onChange={setTags} idPrefix="create-server-tags" />
+                </div>
               </>
             )}
           </div>
         )}
 
-        {error && <p style={{ color: 'red' }}>{error}</p>}
+        {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
 
-        <button type="submit" disabled={loading}>
+        <button type="submit" className="btn-primary" disabled={loading}>
           {loading ? 'Creating...' : 'Create Server'}
         </button>
       </form>
+
+      {onJoinServer && (
+        <>
+          <hr />
+          <h2>Already have an invite?</h2>
+          <form onSubmit={onJoinServer} className="inline-form">
+            <input
+              type="text"
+              placeholder="Paste invite code"
+              value={joinServerId}
+              onChange={(e) => setJoinServerId(e.target.value)}
+            />
+            <button type="submit" disabled={joinLoading}>
+              {joinLoading ? 'Joining...' : 'Join a Server'}
+            </button>
+          </form>
+          {joinError && <p style={{ color: 'var(--danger)' }}>{joinError}</p>}
+        </>
+      )}
     </div>
   )
 }
