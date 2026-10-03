@@ -51,28 +51,6 @@ Some features may be incomplete or unfinished.
 - Node.js
 - REST and real-time APIs
 
-## Project Structure
-
-A typical structure includes:
-
-```text
-src/
-  components/
-  pages/
-  layouts/
-  hooks/
-  services/
-  stores/
-  utils/
-  styles/
-  assets/
-
-src-tauri/
-public/
-```
-
-The exact structure may vary depending on the version of the project.
-
 ## Getting Started
 
 ### Requirements
