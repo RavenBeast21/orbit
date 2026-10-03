@@ -162,4 +162,6 @@ You are free to fork it and continue development under the terms of the reposito
 
 ## License
 
-Add your chosen license here before publishing.
+This project is licensed under the MIT License.
+
+You are free to use, modify, and redistribute the code, including for commercial purposes, as long as the original copyright and license notice are kept.
